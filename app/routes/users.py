@@ -286,36 +286,39 @@ async def login(
     access_token = create_access_token(data={"sub": str(user.id)})
     refresh_token = create_refresh_token(data={"sub": str(user.id)})
     
-    # Detectar si estamos en localhost o producción
-    is_secure = os.getenv("ENVIRONMENT", "development") == "production"
+    # NO usar cookies en producción cross-domain (diferentes dominios)
+    # Las cookies HTTP-only no funcionan entre dominios diferentes
+    # Solo usar cookies en localhost donde frontend y backend están en el mismo dominio
+    is_localhost = os.getenv("ENVIRONMENT", "development") != "production"
     
-    # Configurar cookies HTTP-only con atributos de seguridad
-    response.set_cookie(
-        key="access_token",
-        value=access_token,
-        httponly=True,  # ← No accesible desde JavaScript (protección XSS)
-        secure=is_secure,  # ← Solo HTTPS en producción, False en localhost
-        samesite="lax",  # ← Protección CSRF (lax permite navegación normal)
-        max_age=settings.JWT_ACCESS_TOKEN_EXPIRE_MINUTES * 60,  # 30 minutos
-        path="/",
-        domain=None  # ← Usar dominio actual
-    )
+    if is_localhost:
+        # Configurar cookies HTTP-only SOLO en localhost
+        response.set_cookie(
+            key="access_token",
+            value=access_token,
+            httponly=True,
+            secure=False,  # HTTP en localhost
+            samesite="lax",
+            max_age=settings.JWT_ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+            path="/",
+            domain=None
+        )
+        
+        response.set_cookie(
+            key="refresh_token",
+            value=refresh_token,
+            httponly=True,
+            secure=False,
+            samesite="lax",
+            max_age=settings.REFRESH_TOKEN_EXPIRE_DAYS * 24 * 60 * 60,
+            path="/",
+            domain=None
+        )
+        logger.info(f"Login exitoso para {user.email} - Cookies establecidas (localhost)")
+    else:
+        logger.info(f"Login exitoso para {user.email} - Tokens en body JSON (producción)")
     
-    response.set_cookie(
-        key="refresh_token",
-        value=refresh_token,
-        httponly=True,
-        secure=is_secure,
-        samesite="lax",
-        max_age=settings.REFRESH_TOKEN_EXPIRE_DAYS * 24 * 60 * 60,  # 7 días
-        path="/",
-        domain=None
-    )
-    
-    logger.info(f"Login exitoso para {user.email} - Cookies establecidas (secure={is_secure})")
-    
-    # IMPORTANTE: Seguir devolviendo tokens en el body para compatibilidad
-    # El frontend migrará gradualmente a usar solo cookies
+    # Devolver tokens en el body JSON para producción cross-domain
     return TokenResponse(
         access_token=access_token,
         refresh_token=refresh_token,
@@ -406,33 +409,35 @@ async def refresh_access_token(
     new_access_token = create_access_token(data={"sub": str(user.id)})
     new_refresh_token = create_refresh_token(data={"sub": str(user.id)})
     
-    # Detectar entorno
-    is_secure = os.getenv("ENVIRONMENT", "development") == "production"
+    # NO usar cookies en producción cross-domain
+    is_localhost = os.getenv("ENVIRONMENT", "development") != "production"
     
-    # Actualizar cookies con nuevos tokens
-    response.set_cookie(
-        key="access_token",
-        value=new_access_token,
-        httponly=True,
-        secure=is_secure,
-        samesite="lax",
-        max_age=settings.JWT_ACCESS_TOKEN_EXPIRE_MINUTES * 60,
-        path="/",
-        domain=None
-    )
-    
-    response.set_cookie(
-        key="refresh_token",
-        value=new_refresh_token,
-        httponly=True,
-        secure=is_secure,
-        samesite="lax",
-        max_age=settings.REFRESH_TOKEN_EXPIRE_DAYS * 24 * 60 * 60,
-        path="/",
-        domain=None
-    )
-    
-    logger.info(f"Tokens renovados para usuario: {user.email} - Cookies actualizadas")
+    if is_localhost:
+        # Actualizar cookies SOLO en localhost
+        response.set_cookie(
+            key="access_token",
+            value=new_access_token,
+            httponly=True,
+            secure=False,
+            samesite="lax",
+            max_age=settings.JWT_ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+            path="/",
+            domain=None
+        )
+        
+        response.set_cookie(
+            key="refresh_token",
+            value=new_refresh_token,
+            httponly=True,
+            secure=False,
+            samesite="lax",
+            max_age=settings.REFRESH_TOKEN_EXPIRE_DAYS * 24 * 60 * 60,
+            path="/",
+            domain=None
+        )
+        logger.info(f"Tokens renovados para usuario: {user.email} - Cookies actualizadas (localhost)")
+    else:
+        logger.info(f"Tokens renovados para usuario: {user.email} - Tokens en body JSON (producción)")
     
     return TokenResponse(
         access_token=new_access_token,

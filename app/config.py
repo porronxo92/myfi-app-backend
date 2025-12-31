@@ -5,7 +5,7 @@ from pathlib import Path
 
 class Settings(BaseSettings):
     # Environment
-    ENVIRONMENT: str = "development"
+    ENVIRONMENT: str = "production"  # "development" or "production"
 
     # Security & JWT
     JWT_SECRET_KEY: str = ""
