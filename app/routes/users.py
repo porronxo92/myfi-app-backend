@@ -1,12 +1,11 @@
 """
 Endpoints REST para gestión de usuarios
 """
-from fastapi import APIRouter, Depends, HTTPException, status, Response
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from typing import Optional
 from uuid import UUID
 import math
-import os
 
 from app.database import get_db
 from app.schemas.user import UserCreate, UserUpdate, UserResponse, UserLogin, PasswordChange, TokenResponse, RefreshTokenRequest
@@ -196,7 +195,6 @@ async def delete_user(
 async def login(
     credentials: UserLogin,
     request: Request,
-    response: Response,
     db: Session = Depends(get_db),
     _: bool = Depends(check_rate_limit)
 ):
@@ -226,7 +224,7 @@ async def login(
     }
     ```
     
-    NOTA: Este endpoint NO requiere autenticación
+    NOTA: Los tokens se devuelven en el body JSON para almacenarlos en localStorage
     """
     # Identificador único: IP + Email
     client_id = f"{request.client.host}:{credentials.email}"
@@ -286,39 +284,9 @@ async def login(
     access_token = create_access_token(data={"sub": str(user.id)})
     refresh_token = create_refresh_token(data={"sub": str(user.id)})
     
-    # NO usar cookies en producción cross-domain (diferentes dominios)
-    # Las cookies HTTP-only no funcionan entre dominios diferentes
-    # Solo usar cookies en localhost donde frontend y backend están en el mismo dominio
-    is_localhost = os.getenv("ENVIRONMENT", "development") != "production"
+    logger.info(f"Login exitoso para {user.email} - Tokens en body JSON")
     
-    if is_localhost:
-        # Configurar cookies HTTP-only SOLO en localhost
-        response.set_cookie(
-            key="access_token",
-            value=access_token,
-            httponly=True,
-            secure=False,  # HTTP en localhost
-            samesite="lax",
-            max_age=settings.JWT_ACCESS_TOKEN_EXPIRE_MINUTES * 60,
-            path="/",
-            domain=None
-        )
-        
-        response.set_cookie(
-            key="refresh_token",
-            value=refresh_token,
-            httponly=True,
-            secure=False,
-            samesite="lax",
-            max_age=settings.REFRESH_TOKEN_EXPIRE_DAYS * 24 * 60 * 60,
-            path="/",
-            domain=None
-        )
-        logger.info(f"Login exitoso para {user.email} - Cookies establecidas (localhost)")
-    else:
-        logger.info(f"Login exitoso para {user.email} - Tokens en body JSON (producción)")
-    
-    # Devolver tokens en el body JSON para producción cross-domain
+    # Devolver tokens en el body JSON para almacenarlos en localStorage
     return TokenResponse(
         access_token=access_token,
         refresh_token=refresh_token,
@@ -330,9 +298,7 @@ async def login(
 
 @router.post("/refresh", response_model=TokenResponse)
 async def refresh_access_token(
-    request: Request,
-    response: Response,
-    refresh_data: RefreshTokenRequest = None,
+    refresh_data: RefreshTokenRequest,
     db: Session = Depends(get_db),
     _: bool = Depends(check_rate_limit)
 ):
@@ -357,17 +323,11 @@ async def refresh_access_token(
     }
     ```
     
-    NOTA: Este endpoint NO requiere autenticación
+    NOTA: El refresh_token se envía en el body del request desde localStorage
     """
     logger.info("POST /api/users/refresh - Renovando access token")
     
-    # Intentar obtener refresh_token de cookie primero, luego del body
-    refresh_token_value = request.cookies.get("refresh_token")
-    
-    if not refresh_token_value and refresh_data:
-        refresh_token_value = refresh_data.refresh_token
-    
-    if not refresh_token_value:
+    if not refresh_data or not refresh_data.refresh_token:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="No refresh token provided",
@@ -375,7 +335,7 @@ async def refresh_access_token(
         )
     
     # Verificar refresh token
-    payload = verify_refresh_token(refresh_token_value)
+    payload = verify_refresh_token(refresh_data.refresh_token)
     if not payload:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -409,35 +369,7 @@ async def refresh_access_token(
     new_access_token = create_access_token(data={"sub": str(user.id)})
     new_refresh_token = create_refresh_token(data={"sub": str(user.id)})
     
-    # NO usar cookies en producción cross-domain
-    is_localhost = os.getenv("ENVIRONMENT", "development") != "production"
-    
-    if is_localhost:
-        # Actualizar cookies SOLO en localhost
-        response.set_cookie(
-            key="access_token",
-            value=new_access_token,
-            httponly=True,
-            secure=False,
-            samesite="lax",
-            max_age=settings.JWT_ACCESS_TOKEN_EXPIRE_MINUTES * 60,
-            path="/",
-            domain=None
-        )
-        
-        response.set_cookie(
-            key="refresh_token",
-            value=new_refresh_token,
-            httponly=True,
-            secure=False,
-            samesite="lax",
-            max_age=settings.REFRESH_TOKEN_EXPIRE_DAYS * 24 * 60 * 60,
-            path="/",
-            domain=None
-        )
-        logger.info(f"Tokens renovados para usuario: {user.email} - Cookies actualizadas (localhost)")
-    else:
-        logger.info(f"Tokens renovados para usuario: {user.email} - Tokens en body JSON (producción)")
+    logger.info(f"Tokens renovados para usuario: {user.email} - Tokens en body JSON")
     
     return TokenResponse(
         access_token=new_access_token,
@@ -495,14 +427,13 @@ async def change_password(
 
 @router.post("/logout", status_code=status.HTTP_200_OK)
 async def logout(
-    response: Response,
     current_user: User = Depends(get_current_user)
 ):
     """
-    Cerrar sesión y limpiar cookies HTTP-only
+    Cerrar sesión
     
-    Este endpoint elimina las cookies de autenticación del navegador
-    estableciendo su valor vacío y max_age=0
+    El frontend se encarga de limpiar localStorage.
+    Este endpoint solo confirma el cierre de sesión.
     
     Response:
     ```json
@@ -512,20 +443,5 @@ async def logout(
     ```
     """
     logger.info(f"POST /api/users/logout - Usuario: {current_user.email}")
-    
-    # Limpiar cookies estableciendo valores vacíos y max_age=0
-    response.delete_cookie(
-        key="access_token",
-        path="/",
-        domain=None
-    )
-    
-    response.delete_cookie(
-        key="refresh_token",
-        path="/",
-        domain=None
-    )
-    
-    logger.info(f"Sesión cerrada para {current_user.email} - Cookies eliminadas")
     
     return {"message": "Sesión cerrada correctamente"}
