@@ -4,6 +4,9 @@ from typing import List, Union
 from pathlib import Path
 
 class Settings(BaseSettings):
+    # Environment
+    ENVIRONMENT: str = "development"
+
     # Security & JWT
     JWT_SECRET_KEY: str = ""
     JWT_ALGORITHM: str = "HS256"
@@ -20,7 +23,8 @@ class Settings(BaseSettings):
     LOG_BACKUP_COUNT: int = 5
     
     # Database
-    DATABASE_URL: str = ""
+    DATABASE_URL_LOCALHOST: str = ""
+    DATABASE_URL_PROD: str = ""
     
     # LLM Configuration
     GEMINI_API_KEY: str = ""
@@ -41,6 +45,12 @@ class Settings(BaseSettings):
     # Login-specific rate limiting
     LOGIN_RATE_LIMIT_ATTEMPTS: int = 5
     LOGIN_RATE_LIMIT_WINDOW_MINUTES: int = 15
+
+    @property
+    def DATABASE_URL(self) -> str:
+        if self.ENVIRONMENT == "production":
+            return self.DATABASE_URL_PROD
+        return self.DATABASE_URL_LOCALHOST
     
     @field_validator('ALLOWED_EXTENSIONS')
     @classmethod
