@@ -31,6 +31,19 @@ class Settings(BaseSettings):
     LLM_PROVIDER: str = "gemini"
     LLM_MODEL: str = "gemini-2.0-flash"
     
+    # Stock Market APIs
+    # Finnhub API (Prioridad 1 - 60 llamadas/minuto)
+    FINNHUB_API_KEY: str = ""
+    FINNHUB_MAX_CALLS_PER_MINUTE: int = 60
+    
+    # Alpha Vantage API (Fallback - 25 llamadas/día)
+    ALPHA_VANTAGE_API_KEY: str = ""
+    ALPHA_VANTAGE_BASE_URL: str = "https://www.alphavantage.co/query"
+    ALPHA_VANTAGE_MAX_CALLS_PER_DAY: int = 25
+    
+    # Brandfetch API (Stock Logos)
+    BRANDFETCH_CLIENT_ID: str = ""
+    
     # File Upload
     MAX_FILE_SIZE_MB: int = 10
     ALLOWED_EXTENSIONS: Union[str, List[str]] = "pdf,xlsx,csv,txt"

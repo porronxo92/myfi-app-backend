@@ -28,7 +28,7 @@
 
 ---
 
-## 💰 Transacciones y Categorías ⭐ NUEVO
+## 💰 Transacciones y Categorías ⭐
 
 ### Arquitectura y Diseño
 - **[ARQUITECTURA_TRANSACCIONES_CATEGORIAS.md](ARQUITECTURA_TRANSACCIONES_CATEGORIAS.md)** ⭐
@@ -56,6 +56,50 @@
   - Resumen de mejoras implementadas
   - Estado actual
   - Próximos pasos
+
+---
+
+## 📈 Inversiones Bursátiles ⭐ NUEVO (2024-12-30)
+
+### Documentación Completa
+- **[INVESTMENTS_INTEGRATION.md](INVESTMENTS_INTEGRATION.md)** ⭐ **PRINCIPAL**
+  - Arquitectura backend-centric completa
+  - 6 endpoints REST con autenticación JWT
+  - Integración con Alpha Vantage API
+  - Enriquecimiento automático de posiciones
+  - Cálculo de portfolio summary
+  - Generación de insights automáticos
+  - Ejemplos de uso completos
+  - Guía de testing
+
+### Resumen Ejecutivo
+- **[../../INVESTMENTS_BACKEND_SUMMARY.md](../../INVESTMENTS_BACKEND_SUMMARY.md)** ⭐
+  - Resumen de implementación
+  - Comparación antes/después
+  - Métricas de simplificación
+  - Checklist de deployment
+
+### Changelog
+- **[../../CHANGELOG_INVESTMENTS.md](../../CHANGELOG_INVESTMENTS.md)** ⭐
+  - Historial detallado de cambios
+  - Breaking changes
+  - Mejoras futuras
+  - Configuración requerida
+
+### Script de Pruebas
+- **[../test_investments.py](../test_investments.py)** ⭐
+  - Suite completa de pruebas
+  - Ejemplos de uso de todos los endpoints
+  - Login, CRUD, búsqueda, portfolio
+
+**Características principales:**
+- ✅ Búsqueda de acciones (Alpha Vantage API)
+- ✅ Cotizaciones en tiempo real
+- ✅ Cálculo automático de ganancias/pérdidas
+- ✅ Portfolio summary agregado
+- ✅ Insights y recomendaciones generadas
+- ✅ Mock data como fallback
+- ✅ Autenticación JWT + Rate limiting
 
 ---
 
@@ -95,29 +139,34 @@ backend/
 │   ├── models/           # Modelos ORM (SQLAlchemy)
 │   │   ├── transaction.py   ⭐ Relación con Category
 │   │   ├── category.py      ⭐ Relación con Transaction
+│   │   ├── investment.py    ⭐ NUEVO - Inversiones bursátiles
 │   │   ├── account.py
 │   │   └── user.py
 │   │
 │   ├── schemas/          # Schemas Pydantic
 │   │   ├── transaction.py   ⭐ TransactionResponse mejorado
+│   │   ├── investment.py    ⭐ NUEVO - 9 schemas para inversiones
 │   │   ├── category.py
 │   │   ├── account.py
 │   │   └── user.py
 │   │
 │   ├── services/         # Lógica de negocio
 │   │   ├── transaction_service.py  ⭐ Uso de joinedload()
+│   │   ├── investment_service.py   ⭐ NUEVO - Enriquecimiento y cálculos
 │   │   ├── category_service.py
 │   │   ├── account_service.py
 │   │   └── user_service.py
 │   │
 │   ├── routes/           # Endpoints FastAPI
 │   │   ├── transactions.py  ⭐ Endpoint optimizado
+│   │   ├── investments.py   ⭐ NUEVO - 6 endpoints REST
 │   │   ├── categories.py
 │   │   ├── accounts.py
 │   │   ├── users.py
 │   │   └── upload.py
 │   │
 │   ├── utils/            # Utilidades
+│   │   ├── alpha_vantage.py  ⭐ NUEVO - Integración Alpha Vantage API
 │   │   ├── jwt.py        # Manejo de JWT
 │   │   ├── security.py   # Funciones de seguridad
 │   │   └── logger.py     # Sistema de logging
@@ -128,6 +177,7 @@ backend/
 │
 ├── docs/                 # 📚 Documentación (este directorio)
 ├── tests/                # 🧪 Tests unitarios y de integración
+├── test_investments.py   # ⭐ NUEVO - Suite de pruebas inversiones
 └── temp_uploads/         # 📁 Uploads temporales
 ```
 
@@ -171,6 +221,9 @@ curl -X GET "http://localhost:8000/api/transactions?page=1" \
 | Gestión de Usuarios           | ✅     | USERS_IMPLEMENTATION.md                    |
 | Transacciones con Categorías  | ✅ ⭐  | ARQUITECTURA_TRANSACCIONES_CATEGORIAS.md   |
 | Optimización N+1              | ✅ ⭐  | DIAGRAMA_FLUJO_TRANSACCIONES.md            |
+| Inversiones Bursátiles        | ✅ ⭐⭐ | INVESTMENTS_INTEGRATION.md                 |
+| Alpha Vantage Integration     | ✅ ⭐⭐ | INVESTMENTS_INTEGRATION.md                 |
+| Portfolio Summary & Insights  | ✅ ⭐⭐ | INVESTMENTS_INTEGRATION.md                 |
 | Paginación                    | ✅     | GUIA_USO_TRANSACCIONES.md                  |
 | Filtros avanzados             | ✅     | GUIA_USO_TRANSACCIONES.md                  |
 | Logging estructurado          | ✅     | LOGGING.md                                 |
@@ -219,6 +272,18 @@ Para preguntas sobre la implementación:
 ---
 
 ## 🔄 Changelog
+
+### 2024-12-30 ⭐⭐ Módulo de Inversiones Bursátiles (NUEVO)
+- ✅ Backend completo para inversiones con UUID
+- ✅ Integración con Alpha Vantage API
+- ✅ Enriquecimiento automático de posiciones
+- ✅ Cálculo de portfolio summary
+- ✅ Generación de insights automáticos
+- ✅ 6 endpoints REST autenticados
+- ✅ Mock data como fallback
+- ✅ Frontend simplificado (300 → 110 líneas)
+- ✅ Documentación completa
+- ✅ Script de pruebas
 
 ### 2025-12-30 ⭐ Mejora de Transacciones con Categorías
 - ✅ Agregado `@model_validator` en `TransactionResponse`

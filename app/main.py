@@ -2,7 +2,7 @@ from fastapi import FastAPI, Request, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from app.config import settings
-from app.routes import upload, accounts, categories, transactions, users
+from app.routes import upload, accounts, categories, transactions, users, analytics, insights, health, investments, budgets
 from app.utils.security import check_rate_limit
 from app.utils.logger import app_logger, access_logger, error_logger, get_logger
 import time
@@ -32,10 +32,19 @@ logger.info("=" * 60)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.CORS_ORIGINS,
-    allow_credentials=True,  # ← Permite cookies
-    allow_methods=["*"],
-    allow_headers=["*"],
-    expose_headers=["Set-Cookie"],  # ← Exponer header de cookies
+    allow_credentials=True,  # ← Permite cookies HTTP-only
+    allow_methods=["*"],      # Permitir todos los métodos HTTP
+    allow_headers=["*"],      # Permitir todos los headers
+    expose_headers=[
+        "Set-Cookie",
+        "Authorization",
+        "X-Process-Time",
+        "Access-Control-Allow-Credentials",
+        "Access-Control-Allow-Headers",
+        "Access-Control-Allow-Methods",
+        "Access-Control-Allow-Origin",
+    ],
+    max_age=3600,  # Cache de CORS por 1 hora
 )
 
 # Security Middleware - Trusted Host (previene ataques Host Header)
@@ -79,10 +88,19 @@ async def log_requests(request: Request, call_next):
         
         # Añadir headers de seguridad
         response.headers["X-Content-Type-Options"] = "nosniff"
-        response.headers["X-Frame-Options"] = "DENY"
+        # Usar SAMEORIGIN en lugar de DENY para permitir CORS desde origins permitidos
+        response.headers["X-Frame-Options"] = "SAMEORIGIN"
         response.headers["X-XSS-Protection"] = "1; mode=block"
-        response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+        # No usar Strict-Transport-Security en desarrollo (localhost)
+        if settings.ENVIRONMENT == "production":
+            response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
         response.headers["X-Process-Time"] = str(process_time)
+        
+        # Asegurarse de que los headers CORS están presentes
+        if "Access-Control-Allow-Origin" not in response.headers:
+            origin = request.headers.get("origin")
+            if origin and origin in settings.CORS_ORIGINS:
+                response.headers["Access-Control-Allow-Origin"] = origin
         
         return response
         
@@ -102,7 +120,11 @@ app.include_router(accounts.router, tags=["accounts"])
 app.include_router(categories.router, tags=["categories"])
 app.include_router(transactions.router, tags=["transactions"])
 app.include_router(upload.router, tags=["upload & import"])
-# app.include_router(analytics.router, prefix="/api/analytics", tags=["analytics"])
+app.include_router(analytics.router, tags=["analytics"])
+app.include_router(insights.router, tags=["insights"])
+app.include_router(health.router, tags=["health"])
+app.include_router(investments.router, tags=["investments"])
+app.include_router(budgets.router, tags=["budgets"])
 
 
 @app.get("/")

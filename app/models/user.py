@@ -109,6 +109,24 @@ class User(Base):
     # Un usuario tiene muchas cuentas
     # Si borras el usuario, se borran sus cuentas
     
+    investments = relationship(
+        "Investment",
+        back_populates="user",
+        cascade="all, delete-orphan",
+        lazy="select"
+    )
+    # Un usuario tiene muchas inversiones
+    # Si borras el usuario, se borran sus inversiones
+    
+    budgets = relationship(
+        "Budget",
+        back_populates="user",
+        cascade="all, delete-orphan",
+        lazy="select"
+    )
+    # Un usuario tiene muchos presupuestos
+    # Si borras el usuario, se borran sus presupuestos
+    
     # ============================================
     # MÉTODOS
     # ============================================

@@ -180,7 +180,7 @@ class CategoryService:
         return category
     
     @staticmethod
-    def update(db: Session, category_id: UUID, category_data: CategoryUpdate) -> Optional[Category]:
+    def update(db: Session, category_id: UUID, category_data: CategoryUpdate, user_id: UUID) -> Optional[Category]:
         """
         Actualizar categoría existente
         
@@ -188,6 +188,7 @@ class CategoryService:
             db: Sesión de base de datos
             category_id: UUID de la categoría
             category_data: Datos a actualizar
+            user_id: UUID del usuario
         
         Returns:
             Categoría actualizada o None si no existe
@@ -197,7 +198,7 @@ class CategoryService:
         """
         logger.info(f"Actualizando categoría: {category_id}")
         
-        category = CategoryService.get_by_id(db, category_id)
+        category = CategoryService.get_by_id(db, category_id, user_id)
         if not category:
             return None
         

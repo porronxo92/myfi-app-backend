@@ -1,6 +1,6 @@
 """
 Routes package
 """
-from app.routes import upload, accounts, categories, transactions, users
+from app.routes import upload, accounts, categories, transactions, users, analytics, insights, budgets
 
-__all__ = ["upload", "accounts", "categories", "transactions", "users"]
+__all__ = ["upload", "accounts", "categories", "transactions", "users", "analytics", "insights", "budgets"]

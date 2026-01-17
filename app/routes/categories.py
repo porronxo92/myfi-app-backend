@@ -237,7 +237,7 @@ async def update_category(
     logger.info(f"Actualizando categoría: {category_id}")
     
     try:
-        category = CategoryService.update(db, category_id, category_data)
+        category = CategoryService.update(db, category_id, category_data, current_user.id)
         if not category:
             logger.warning(f"Categoría no encontrada para actualizar: {category_id}")
             raise HTTPException(

@@ -10,6 +10,7 @@ from decimal import Decimal
 
 from app.models.transaction import Transaction
 from app.models.account import Account
+from app.models.category import Category
 from app.schemas.transaction import TransactionCreate, TransactionUpdate
 from app.utils.logger import get_logger
 
@@ -155,19 +156,37 @@ class TransactionService:
         # ============================================
         resolved_category_id = transaction_data.category_id
         
-        # Si category_id es un string (nombre), buscar el ID correspondiente
+        # Si category_id es un string, puede ser:
+        # 1. Un UUID en formato string (uso normal)
+        # 2. Un nombre de categoría (búsqueda por nombre)
         if transaction_data.category_id and isinstance(transaction_data.category_id, str):
             from app.services.category_service import CategoryService
             
-            category_name = transaction_data.category_id
-            logger.info(f"Resolviendo categoría por nombre: '{category_name}'")
+            category_value = transaction_data.category_id
             
-            category = CategoryService.get_by_name(db, category_name)
-            if not category:
-                raise ValueError(f"Categoría '{category_name}' no encontrada")
-            
-            resolved_category_id = category.id
-            logger.info(f"Categoría resuelta: '{category.name}' -> ID: {category.id}")
+            # Intentar parsear como UUID primero
+            try:
+                from uuid import UUID as UUIDType
+                # Si se puede parsear como UUID, es un ID válido
+                parsed_uuid = UUIDType(category_value)
+                resolved_category_id = parsed_uuid
+                logger.info(f"category_id parseado como UUID: {resolved_category_id}")
+                
+                # Verificar que la categoría con ese UUID existe
+                category = db.query(Category).filter(Category.id == parsed_uuid).first()
+                if not category:
+                    raise ValueError(f"Categoría con ID '{category_value}' no encontrada")
+                    
+            except (ValueError, AttributeError):
+                # No es un UUID válido, buscar por nombre
+                logger.info(f"Resolviendo categoría por nombre: '{category_value}'")
+                
+                category = CategoryService.get_by_name(db, category_value)
+                if not category:
+                    raise ValueError(f"Categoría '{category_value}' no encontrada")
+                
+                resolved_category_id = category.id
+                logger.info(f"Categoría resuelta: '{category.name}' -> ID: {category.id}")
         
         # Crear diccionario de datos con category_id resuelto
         transaction_dict = transaction_data.model_dump()
