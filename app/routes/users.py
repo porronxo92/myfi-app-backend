@@ -8,7 +8,7 @@ from uuid import UUID
 import math
 
 from app.database import get_db
-from app.schemas.user import UserCreate, UserUpdate, UserResponse, UserLogin, PasswordChange, TokenResponse, RefreshTokenRequest
+from app.schemas.user import UserCreate, UserUpdate, UserResponse, UserLogin, PasswordChange, TokenResponse, RefreshTokenRequest, UpdateUserProfile
 from app.schemas.pagination import PaginatedResponse
 from app.services.user_service import UserService
 from app.models.user import User
@@ -58,6 +58,100 @@ async def create_user(
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         logger.error(f"Error inesperado al crear usuario: {e}")
+        raise HTTPException(status_code=500, detail="Error interno del servidor")
+
+
+@router.get("/me", response_model=UserResponse)
+async def get_current_user_profile(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Obtener perfil del usuario actual
+    
+    Response: UserResponse con todos los datos del usuario
+    """
+    logger.info(f"GET /api/users/me - Usuario: {current_user.email}")
+    
+    # Refrescar datos desde la BD
+    user = UserService.get_by_id(db, current_user.id)
+    if not user:
+        raise HTTPException(status_code=404, detail="Usuario no encontrado")
+    
+    return user
+
+
+@router.put("/me", response_model=UserResponse)
+async def update_current_user_profile(
+    profile_data: UpdateUserProfile,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+    _: bool = Depends(check_rate_limit)
+):
+    """
+    Actualizar perfil del usuario actual
+    
+    Request:
+    ```json
+    {
+      "email": "nuevo@example.com",
+      "username": "nuevo_username",
+      "full_name": "Nuevo Nombre"
+    }
+    ```
+    
+    Response: UserResponse actualizado
+    """
+    try:
+        logger.info(f"PUT /api/users/me - Usuario: {current_user.email}")
+        
+        # Convertir UpdateUserProfile a UserUpdate
+        user_update = UserUpdate(**profile_data.model_dump(exclude_unset=True))
+        
+        user = UserService.update(db, current_user.id, user_update)
+        if not user:
+            raise HTTPException(status_code=404, detail="Usuario no encontrado")
+        
+        return user
+    except ValueError as e:
+        logger.error(f"Error al actualizar perfil: {e}")
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"Error inesperado al actualizar perfil: {e}")
+        raise HTTPException(status_code=500, detail="Error interno del servidor")
+
+
+@router.put("/me/profile-picture", response_model=UserResponse)
+async def update_profile_picture(
+    profile_picture_url: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+    _: bool = Depends(check_rate_limit)
+):
+    """
+    Actualizar foto de perfil del usuario actual
+    
+    Request (como parámetro de query o body):
+    ```json
+    {
+      "profile_picture_url": "https://example.com/photo.jpg"
+    }
+    ```
+    
+    Response: UserResponse actualizado
+    """
+    try:
+        logger.info(f"PUT /api/users/me/profile-picture - Usuario: {current_user.email}")
+        
+        user_update = UserUpdate(profile_picture=profile_picture_url)
+        user = UserService.update(db, current_user.id, user_update)
+        
+        if not user:
+            raise HTTPException(status_code=404, detail="Usuario no encontrado")
+        
+        return user
+    except Exception as e:
+        logger.error(f"Error al actualizar foto de perfil: {e}")
         raise HTTPException(status_code=500, detail="Error interno del servidor")
 
 
@@ -445,3 +539,4 @@ async def logout(
     logger.info(f"POST /api/users/logout - Usuario: {current_user.email}")
     
     return {"message": "Sesión cerrada correctamente"}
+

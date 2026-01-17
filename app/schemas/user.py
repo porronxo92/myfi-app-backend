@@ -10,6 +10,7 @@ class UserBase(BaseModel):
     email: EmailStr = Field(..., description="Email del usuario")
     username: Optional[str] = Field(None, min_length=3, max_length=50)
     full_name: Optional[str] = Field(None, max_length=100)
+    profile_picture: Optional[str] = Field(None, description="Base64 de la foto de perfil o URL")
 
 # ============================================
 # SCHEMA PARA CREAR (POST)
@@ -46,9 +47,28 @@ class UserUpdate(BaseModel):
     email: Optional[EmailStr] = None
     username: Optional[str] = None
     full_name: Optional[str] = None
+    profile_picture: Optional[str] = None
     password: Optional[str] = Field(None, min_length=8, max_length=100)
     is_active: Optional[bool] = None
     is_admin: Optional[bool] = None
+
+# ============================================
+# SCHEMA PARA ACTUALIZAR PERFIL (PUT /api/users/me)
+# ============================================
+class UpdateUserProfile(BaseModel):
+    """
+    PUT /api/users/me
+    
+    Request:
+    {
+      "email": "nuevo@example.com",
+      "username": "nuevo_username",
+      "full_name": "Nuevo Nombre"
+    }
+    """
+    email: Optional[EmailStr] = None
+    username: Optional[str] = Field(None, min_length=3, max_length=50)
+    full_name: Optional[str] = Field(None, max_length=100)
 
 # ============================================
 # SCHEMA PARA LOGIN

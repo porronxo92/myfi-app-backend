@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, Boolean, DateTime, CheckConstraint
+from sqlalchemy import Column, String, Boolean, DateTime, CheckConstraint, Text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
@@ -59,6 +59,12 @@ class User(Base):
         String(100),
         nullable=True,
         comment="Nombre completo del usuario"
+    )
+    
+    profile_picture = Column(
+        Text,
+        nullable=True,
+        comment="Base64 de la foto de perfil o URL"
     )
     
     is_active = Column(
