@@ -1,0 +1,63 @@
+# =============================================================
+# .dockerignore - Excluir archivos innecesarios del build
+# =============================================================
+
+# Git
+.git
+.gitignore
+
+# Python cache y bytecode
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+
+# Entornos virtuales
+venv/
+.venv/
+env/
+.env.local
+.env.*.local
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Tests
+tests/
+pytest.ini
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Documentación
+docs/
+*.md
+!README.md
+
+# Logs locales
+logs/
+*.log
+
+# Backups
+backupsBBDD/
+
+# Archivos temporales
+temp_uploads/
+*.tmp
+*.temp
+
+# Docker (evitar recursión)
+Dockerfile
+docker-compose*.yml
+.docker/
+
+# Migraciones (si no se necesitan en runtime)
+# migrations/
+
+# Archivos de configuración local
+.env.example

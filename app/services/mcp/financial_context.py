@@ -18,6 +18,10 @@ from app.models.transaction import Transaction
 from app.models.category import Category
 from app.models.account import Account
 from app.models.user import User
+from app.utils.aggregation_helpers import (
+    sum_amounts, sum_absolute_amounts, group_by_category,
+    group_by_month, detect_anomalies, detect_recurring, calculate_summary
+)
 
 
 class MCPFinancialContext:
@@ -221,31 +225,32 @@ class MCPFinancialContext:
         
         account_ids = [acc.id for acc in accounts]
         
-        # Calcular ingresos totales
-        total_income = self.db.query(func.sum(Transaction.amount)).filter(
-            Transaction.account_id.in_(account_ids),
-            Transaction.date >= start_date.date(),
-            Transaction.date <= end_date.date(),
-            Transaction.type == 'income'
-        ).scalar() or Decimal('0.00')
+        if not account_ids:
+            return {
+                "user_id": str(user_id),
+                "period": period,
+                "period_range": {
+                    "start": start_date.strftime("%Y-%m-%d"),
+                    "end": end_date.strftime("%Y-%m-%d")
+                },
+                "total_income": 0.0,
+                "total_expenses": 0.0,
+                "net_balance": 0.0,
+                "savings_rate": 0.0,
+                "num_accounts": 0,
+                "num_transactions": 0,
+                "currency": "EUR"
+            }
         
-        # Calcular gastos totales (en valor absoluto)
-        total_expenses = self.db.query(func.sum(func.abs(Transaction.amount))).filter(
-            Transaction.account_id.in_(account_ids),
-            Transaction.date >= start_date.date(),
-            Transaction.date <= end_date.date(),
-            Transaction.type == 'expense'
-        ).scalar() or Decimal('0.00')
-        
-        # Conteo de transacciones
-        num_transactions = self.db.query(func.count(Transaction.id)).filter(
+        # Obtener transacciones (sin agregaciones SQL - campos encriptados)
+        transactions = self.db.query(Transaction).filter(
             Transaction.account_id.in_(account_ids),
             Transaction.date >= start_date.date(),
             Transaction.date <= end_date.date()
-        ).scalar() or 0
+        ).all()
         
-        net_balance = float(total_income) - float(total_expenses)
-        savings_rate = (net_balance / float(total_income) * 100) if float(total_income) > 0 else 0
+        # Calcular en Python (datos desencriptados por TypeDecorator)
+        summary = calculate_summary(transactions, accounts)
         
         return {
             "user_id": str(user_id),
@@ -254,12 +259,12 @@ class MCPFinancialContext:
                 "start": start_date.strftime("%Y-%m-%d"),
                 "end": end_date.strftime("%Y-%m-%d")
             },
-            "total_income": float(total_income),
-            "total_expenses": float(total_expenses),
-            "net_balance": net_balance,
-            "savings_rate": round(savings_rate, 2),
+            "total_income": summary["total_income"],
+            "total_expenses": summary["total_expenses"],
+            "net_balance": summary["net_balance"],
+            "savings_rate": summary["savings_rate"],
             "num_accounts": len(accounts),
-            "num_transactions": num_transactions,
+            "num_transactions": summary["num_transactions"],
             "currency": accounts[0].currency if accounts else "EUR"
         }
     
@@ -272,23 +277,15 @@ class MCPFinancialContext:
         """
         Desglose de gastos agrupados por categoría.
         
+        NOTA: Cálculo en Python porque amount está encriptado.
+        
         Args:
             user_id: ID del usuario
             period: Período a analizar
             account_id: UUID de cuenta específica como string (opcional)
         
         Returns:
-            [
-                {
-                    "category_name": "Alimentación",
-                    "category_id": "...",
-                    "total": 450.50,
-                    "percentage": 25.0,
-                    "num_transactions": 12,
-                    "avg_transaction": 37.54
-                },
-                ...
-            ]
+            Lista de categorías con totales y porcentajes
         """
         start_date, end_date = self._parse_period(period)
         
@@ -299,50 +296,44 @@ class MCPFinancialContext:
         )
         
         if account_id is not None:
-            # Convertir string UUID a UUID object
             from uuid import UUID as UUIDType
             account_uuid = UUIDType(account_id) if isinstance(account_id, str) else account_id
             accounts_query = accounts_query.filter(Account.id == account_uuid)
         
         accounts = accounts_query.all()
-        
         account_ids = [acc.id for acc in accounts]
         
-        # Query agrupada por categoría
-        category_spending = self.db.query(
-            Category.id,
-            Category.name,
-            Category.color,
-            func.sum(func.abs(Transaction.amount)).label('total'),
-            func.count(Transaction.id).label('count'),
-            func.avg(func.abs(Transaction.amount)).label('avg_amount')
-        ).join(
-            Transaction, Transaction.category_id == Category.id
-        ).filter(
+        if not account_ids:
+            return []
+        
+        # Obtener transacciones de gastos (sin agregaciones SQL)
+        transactions = self.db.query(Transaction).filter(
             Transaction.account_id.in_(account_ids),
             Transaction.date >= start_date.date(),
             Transaction.date <= end_date.date(),
             Transaction.type == 'expense'
-        ).group_by(
-            Category.id, Category.name, Category.color
-        ).order_by(
-            desc('total')
         ).all()
         
+        # Agrupar en Python
+        categories = group_by_category(transactions, include_color=True)
+        
         # Calcular total general para porcentajes
-        total_general = sum([float(cat.total) for cat in category_spending])
+        total_general = sum([cat["total"] for cat in categories])
         
         result = []
-        for cat in category_spending:
-            percentage = (float(cat.total) / total_general * 100) if total_general > 0 else 0
+        for cat in categories:
+            percentage = (cat["total"] / total_general * 100) if total_general > 0 else 0
+            # Obtener category_id desde la transacción
+            cat_obj = self.db.query(Category).filter(Category.name == cat["category"]).first()
+            
             result.append({
-                "category_id": str(cat.id),
-                "category_name": cat.name,
-                "color": cat.color,
-                "total": float(cat.total),
+                "category_id": str(cat_obj.id) if cat_obj else None,
+                "category_name": cat["category"],
+                "color": cat["color"],
+                "total": round(cat["total"], 2),
                 "percentage": round(percentage, 2),
-                "num_transactions": cat.count,
-                "avg_transaction": float(cat.avg_amount)
+                "num_transactions": cat["count"],
+                "avg_transaction": round(cat["total"] / cat["count"], 2) if cat["count"] > 0 else 0.0
             })
         
         return result
@@ -370,42 +361,37 @@ class MCPFinancialContext:
         )
         
         if account_id is not None:
-            # Convertir string UUID a UUID object
             from uuid import UUID as UUIDType
             account_uuid = UUIDType(account_id) if isinstance(account_id, str) else account_id
             accounts_query = accounts_query.filter(Account.id == account_uuid)
         
         accounts = accounts_query.all()
-        
         account_ids = [acc.id for acc in accounts]
         
-        income_sources = self.db.query(
-            Category.id,
-            Category.name,
-            Category.color,
-            func.sum(Transaction.amount).label('total'),
-            func.count(Transaction.id).label('count')
-        ).join(
-            Transaction, Transaction.category_id == Category.id
-        ).filter(
+        if not account_ids:
+            return []
+        
+        # Obtener transacciones de ingresos (sin agregaciones SQL)
+        transactions = self.db.query(Transaction).filter(
             Transaction.account_id.in_(account_ids),
             Transaction.date >= start_date.date(),
             Transaction.date <= end_date.date(),
             Transaction.type == 'income'
-        ).group_by(
-            Category.id, Category.name, Category.color
-        ).order_by(
-            desc('total')
         ).all()
         
+        # Agrupar en Python
+        categories = group_by_category(transactions, include_color=True)
+        
         result = []
-        for source in income_sources:
+        for cat in categories:
+            cat_obj = self.db.query(Category).filter(Category.name == cat["category"]).first()
+            
             result.append({
-                "category_id": str(source.id),
-                "category_name": source.name,
-                "color": source.color,
-                "total": float(source.total),
-                "num_transactions": source.count
+                "category_id": str(cat_obj.id) if cat_obj else None,
+                "category_name": cat["category"],
+                "color": cat["color"],
+                "total": round(cat["total"], 2),
+                "num_transactions": cat["count"]
             })
         
         return result
@@ -418,13 +404,7 @@ class MCPFinancialContext:
         """
         Tendencia mensual de ingresos, gastos y balance.
         
-        Returns:
-            {
-                "months": ["2024-08", "2024-09", ..., "2025-01"],
-                "income": [2500, 2300, 2600, ...],
-                "expenses": [1800, 1900, 2100, ...],
-                "balance": [700, 400, 500, ...]
-            }
+        NOTA: Cálculo en Python porque amount está encriptado.
         """
         accounts = self.db.query(Account).filter(
             Account.user_id == user_id,
@@ -433,36 +413,33 @@ class MCPFinancialContext:
         
         account_ids = [acc.id for acc in accounts]
         
+        if not account_ids:
+            return {"months": [], "income": [], "expenses": [], "balance": []}
+        
         # Calcular fecha de inicio (N meses atrás)
         end_date = datetime.now()
         start_date = end_date - timedelta(days=30 * months)
         
-        # Query agrupada por año-mes
-        monthly_data = self.db.query(
-            extract('year', Transaction.date).label('year'),
-            extract('month', Transaction.date).label('month'),
-            Transaction.type,
-            func.sum(func.abs(Transaction.amount)).label('total')
-        ).filter(
+        # Obtener transacciones (sin agregaciones SQL)
+        transactions = self.db.query(Transaction).filter(
             Transaction.account_id.in_(account_ids),
             Transaction.date >= start_date.date()
-        ).group_by(
-            'year', 'month', Transaction.type
-        ).order_by(
-            'year', 'month'
         ).all()
         
-        # Organizar datos por mes
+        # Agrupar por mes en Python
         monthly_dict = {}
-        for row in monthly_data:
-            month_key = f"{int(row.year)}-{int(row.month):02d}"
-            if month_key not in monthly_dict:
-                monthly_dict[month_key] = {"income": 0, "expenses": 0}
-            
-            if row.type == 'income':
-                monthly_dict[month_key]["income"] = float(row.total)
-            elif row.type == 'expense':
-                monthly_dict[month_key]["expenses"] = float(row.total)
+        for t in transactions:
+            if t.date:
+                month_key = t.date.strftime("%Y-%m")
+                if month_key not in monthly_dict:
+                    monthly_dict[month_key] = {"income": 0.0, "expenses": 0.0}
+                
+                amount = float(t.amount) if t.amount else 0.0
+                
+                if t.type == 'income':
+                    monthly_dict[month_key]["income"] += amount
+                elif t.type == 'expense':
+                    monthly_dict[month_key]["expenses"] += abs(amount)
         
         # Crear series temporales
         months_list = sorted(monthly_dict.keys())

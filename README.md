@@ -61,6 +61,39 @@ uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 
 Documentación: `http://localhost:8000/docs`
 
+## 🐳 Docker & Despliegue
+
+### Desarrollo local con Docker Compose
+
+```powershell
+# Copiar variables de entorno
+Copy-Item .env.example .env
+
+# Generar secretos (ver .env.example)
+python -c "import secrets; print(secrets.token_urlsafe(48))"
+
+# Levantar API + PostgreSQL
+docker-compose up -d
+
+# Verificar que el schema se aplicó correctamente
+.\verify_db.ps1  # Windows
+# O: ./verify_db.sh en Linux/Mac
+
+# Ver logs
+docker-compose logs -f api
+```
+
+**URLs:**
+- API Docs: http://localhost:8080/docs
+- Health Check: http://localhost:8080/health
+- PostgreSQL: localhost:5433 (user: postgres, pass: postgres)
+
+### Documentación adicional
+
+- **[DOCKER_DEPLOYMENT.md](DOCKER_DEPLOYMENT.md)** - Guía completa de despliegue (local y Cloud Run)
+- **[DATABASE_INIT.md](DATABASE_INIT.md)** - Inicialización y gestión del schema de BD
+- **[.env.example](.env.example)** - Plantilla de variables de entorno
+
 ## Pruebas
 
 ```bash

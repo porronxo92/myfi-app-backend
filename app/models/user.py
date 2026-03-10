@@ -1,3 +1,13 @@
+"""
+Modelo User - Usuarios del Sistema
+===================================
+
+SEGURIDAD (GDPR/PSD2):
+- email: EN CLARO (necesario para login con WHERE email = X)
+- full_name, profile_picture: Encriptados con AES-256-GCM
+- password_hash: Bcrypt (no reversible)
+"""
+
 from sqlalchemy import Column, String, Boolean, DateTime, CheckConstraint, Text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
@@ -5,12 +15,15 @@ from sqlalchemy.sql import func
 import uuid
 
 from app.database import Base
+from app.models.encrypted_fields import EncryptedString, EncryptedText
+
 
 class User(Base):
     """
     Modelo ORM para la tabla 'users'
     
-    Representa usuarios del sistema
+    Representa usuarios del sistema.
+    Datos personales (excepto email) están encriptados con AES-256-GCM.
     """
     
     __tablename__ = "users"
@@ -23,7 +36,7 @@ class User(Base):
     )
     
     # ============================================
-    # COLUMNAS
+    # COLUMNAS IDENTIFICADORAS
     # ============================================
     
     id = Column(
@@ -33,12 +46,13 @@ class User(Base):
         comment="Identificador único del usuario"
     )
     
+    # Email EN CLARO (necesario para login)
     email = Column(
         String(255),
         nullable=False,
         unique=True,
         index=True,
-        comment="Email del usuario (único)"
+        comment="Email del usuario - EN CLARO para búsqueda de login"
     )
     
     username = Column(
@@ -53,18 +67,6 @@ class User(Base):
         String(255),
         nullable=False,
         comment="Hash de la contraseña (bcrypt)"
-    )
-    
-    full_name = Column(
-        String(100),
-        nullable=True,
-        comment="Nombre completo del usuario"
-    )
-    
-    profile_picture = Column(
-        Text,
-        nullable=True,
-        comment="Base64 de la foto de perfil o URL"
     )
     
     is_active = Column(
@@ -103,6 +105,22 @@ class User(Base):
     )
     
     # ============================================
+    # COLUMNAS ENCRIPTADAS (AES-256-GCM)
+    # ============================================
+    
+    full_name = Column(
+        EncryptedString(100),
+        nullable=True,
+        comment="Nombre completo - ENCRIPTADO AES-256-GCM"
+    )
+    
+    profile_picture = Column(
+        EncryptedText,
+        nullable=True,
+        comment="Foto de perfil (base64) - ENCRIPTADO AES-256-GCM"
+    )
+    
+    # ============================================
     # RELACIONES
     # ============================================
     
@@ -112,8 +130,6 @@ class User(Base):
         cascade="all, delete-orphan",
         lazy="select"
     )
-    # Un usuario tiene muchas cuentas
-    # Si borras el usuario, se borran sus cuentas
     
     investments = relationship(
         "Investment",
@@ -121,8 +137,6 @@ class User(Base):
         cascade="all, delete-orphan",
         lazy="select"
     )
-    # Un usuario tiene muchas inversiones
-    # Si borras el usuario, se borran sus inversiones
     
     budgets = relationship(
         "Budget",
@@ -130,15 +144,13 @@ class User(Base):
         cascade="all, delete-orphan",
         lazy="select"
     )
-    # Un usuario tiene muchos presupuestos
-    # Si borras el usuario, se borran sus presupuestos
     
     # ============================================
     # MÉTODOS
     # ============================================
     
     def __repr__(self):
-        return f"<User(email='{self.email}', username='{self.username}')>"
+        return f"<User(id='{self.id}', email='{self.email}')>"
     
     def to_dict(self):
         """Convierte el objeto a diccionario (sin password_hash)"""
@@ -151,10 +163,24 @@ class User(Base):
             "is_admin": self.is_admin,
             "last_login": self.last_login.isoformat() if self.last_login else None,
             "created_at": self.created_at.isoformat() if self.created_at else None,
-            "updated_at": self.updated_at.isoformat() if self.updated_at else None
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+            "has_profile_picture": self.profile_picture is not None
+        }
+    
+    def to_public_dict(self):
+        """Diccionario con solo datos públicos"""
+        return {
+            "id": str(self.id),
+            "username": self.username,
+            "has_profile_picture": self.profile_picture is not None
         }
     
     @property
-    def account_count(self):
+    def account_count(self) -> int:
         """Número de cuentas del usuario"""
-        return len(self.accounts)
+        return len(self.accounts) if self.accounts else 0
+    
+    @property
+    def investment_count(self) -> int:
+        """Número de inversiones del usuario"""
+        return len(self.investments) if self.investments else 0

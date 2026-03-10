@@ -1,14 +1,15 @@
 """
 Endpoints REST para gestión de usuarios
 """
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Body
 from sqlalchemy.orm import Session
 from typing import Optional
 from uuid import UUID
 import math
+import base64
 
 from app.database import get_db
-from app.schemas.user import UserCreate, UserUpdate, UserResponse, UserLogin, PasswordChange, TokenResponse, RefreshTokenRequest, UpdateUserProfile
+from app.schemas.user import UserCreate, UserUpdate, UserResponse, UserLogin, PasswordChange, TokenResponse, RefreshTokenRequest, UpdateUserProfile, ProfilePictureUpdate
 from app.schemas.pagination import PaginatedResponse
 from app.services.user_service import UserService
 from app.models.user import User
@@ -123,7 +124,7 @@ async def update_current_user_profile(
 
 @router.put("/me/profile-picture", response_model=UserResponse)
 async def update_profile_picture(
-    profile_picture_url: str,
+    picture_data: ProfilePictureUpdate = Body(...),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
     _: bool = Depends(check_rate_limit)
@@ -131,27 +132,60 @@ async def update_profile_picture(
     """
     Actualizar foto de perfil del usuario actual
     
-    Request (como parámetro de query o body):
+    ⚠️ IMPORTANTE: La imagen debe enviarse en el body JSON, NO en query parameters.
+    Los query parameters tienen límite de tamaño y causan error 431 con imágenes grandes.
+    
+    Request Body (JSON):
     ```json
     {
-      "profile_picture_url": "https://example.com/photo.jpg"
+      "profile_picture": "data:image/jpeg;base64,/9j/4AAQ..."
+    }
+    ```
+    o solo base64:
+    ```json
+    {
+      "profile_picture": "/9j/4AAQ..."
     }
     ```
     
-    Response: UserResponse actualizado
+    El backend extrae el base64 automáticamente y lo almacena encriptado.
     """
     try:
         logger.info(f"PUT /api/users/me/profile-picture - Usuario: {current_user.email}")
         
-        user_update = UserUpdate(profile_picture=profile_picture_url)
+        base64_data = picture_data.profile_picture.strip()
+        logger.info(f"Imagen recibida via body JSON (tamaño: {len(base64_data)} chars)")
+        
+        # Si viene como data URL (data:image/jpeg;base64,...), extraer solo el base64
+        if base64_data.startswith("data:"):
+            try:
+                # Formato: data:image/jpeg;base64,<base64_string>
+                base64_data = base64_data.split(",", 1)[1]
+                logger.info("Data URL detectada, extrayendo base64")
+            except IndexError:
+                raise HTTPException(status_code=400, detail="Formato de data URL inválido")
+        
+        # Validar que es base64 válido
+        try:
+            base64.b64decode(base64_data, validate=True)
+        except Exception as e:
+            logger.error(f"Base64 inválido: {e}")
+            raise HTTPException(status_code=400, detail="El campo profile_picture no contiene base64 válido")
+        
+        # Actualizar usuario con el base64
+        user_update = UserUpdate(profile_picture=base64_data)
         user = UserService.update(db, current_user.id, user_update)
         
         if not user:
             raise HTTPException(status_code=404, detail="Usuario no encontrado")
         
+        logger.info(f"Foto de perfil actualizada para usuario {current_user.email}")
         return user
+        
+    except HTTPException:
+        raise
     except Exception as e:
-        logger.error(f"Error al actualizar foto de perfil: {e}")
+        logger.error(f"Error inesperado al actualizar foto de perfil: {e}")
         raise HTTPException(status_code=500, detail="Error interno del servidor")
 
 
@@ -536,7 +570,175 @@ async def logout(
     }
     ```
     """
-    logger.info(f"POST /api/users/logout - Usuario: {current_user.email}")
+    logger.info(f"POST /api/users/logout - Usuario: {current_user.id}")
     
     return {"message": "Sesión cerrada correctamente"}
+
+
+# ============================================
+# GDPR - DERECHO AL OLVIDO (Art. 17)
+# ============================================
+
+@router.delete("/me/data", status_code=status.HTTP_202_ACCEPTED)
+async def request_data_deletion(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    _: bool = Depends(check_rate_limit)
+):
+    """
+    Solicitar eliminación de todos los datos del usuario (GDPR Art. 17 - Derecho al Olvido)
+    
+    Este endpoint:
+    1. Anonimiza los datos del usuario inmediatamente
+    2. Desactiva la cuenta
+    3. Los datos asociados (cuentas, transacciones, inversiones) quedan huérfanos
+       y serán eliminados en el proceso de limpieza programado
+    
+    **IMPORTANTE**: Esta acción es IRREVERSIBLE.
+    
+    Response:
+    ```json
+    {
+      "message": "Solicitud de eliminación recibida. Datos anonimizados.",
+      "anonymized_at": "2026-02-11T10:30:00Z",
+      "user_id": "550e8400-****-****-****-4466****"
+    }
+    ```
+    """
+    from datetime import datetime, timezone
+    import uuid as uuid_module
+    
+    logger.info(f"DELETE /api/users/me/data - Solicitud GDPR de usuario: {current_user.id}")
+    
+    try:
+        # Generar identificador único para usuario anonimizado
+        anon_id = str(uuid_module.uuid4())[:8]
+        
+        # Anonimizar datos del usuario
+        original_user_id = str(current_user.id)
+        current_user.email = f"deleted_{anon_id}@anonymized.local"
+        current_user.username = None
+        current_user.full_name = "Usuario Eliminado"
+        current_user.profile_picture = None
+        current_user.is_active = False
+        
+        # Registrar timestamp de anonimización
+        anonymized_at = datetime.now(timezone.utc)
+        
+        db.commit()
+        
+        logger.info(f"GDPR: Datos anonimizados para usuario (ID parcial: {original_user_id[:8]}...)")
+        
+        return {
+            "message": "Solicitud de eliminación recibida. Datos anonimizados.",
+            "anonymized_at": anonymized_at.isoformat(),
+            "info": "Tu cuenta ha sido desactivada y tus datos personales han sido anonimizados. "
+                    "Los datos financieros asociados serán eliminados permanentemente en el próximo ciclo de limpieza."
+        }
+        
+    except Exception as e:
+        logger.error(f"Error al procesar solicitud GDPR: {e}")
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Error al procesar la solicitud de eliminación. Por favor, contacta soporte."
+        )
+
+
+@router.get("/me/export", status_code=status.HTTP_200_OK)
+async def export_user_data(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    _: bool = Depends(check_rate_limit)
+):
+    """
+    Exportar todos los datos del usuario (GDPR Art. 20 - Derecho a la Portabilidad)
+    
+    Retorna todos los datos del usuario en formato JSON estructurado.
+    
+    Response: JSON con todos los datos del usuario
+    """
+    from app.services.account_service import AccountService
+    from app.services.transaction_service import TransactionService
+    from app.services.investment_service import investment_service
+    
+    logger.info(f"GET /api/users/me/export - Exportación GDPR para usuario: {current_user.id}")
+    
+    try:
+        # Obtener todas las cuentas del usuario
+        accounts = AccountService.get_all(db, user_id=current_user.id, limit=1000)
+        
+        # Obtener todas las transacciones
+        transactions = TransactionService.get_all(db, user_id=current_user.id, limit=10000)
+        
+        # Obtener inversiones
+        investments = investment_service.get_all(db, user_id=current_user.id, limit=1000)
+        
+        # Construir respuesta
+        export_data = {
+            "export_info": {
+                "generated_at": datetime.now().isoformat(),
+                "format_version": "1.0",
+                "user_id": str(current_user.id)
+            },
+            "user_profile": {
+                "email": current_user.email,
+                "username": current_user.username,
+                "full_name": current_user.full_name,
+                "created_at": current_user.created_at.isoformat() if current_user.created_at else None,
+                "last_login": current_user.last_login.isoformat() if current_user.last_login else None
+            },
+            "accounts": [
+                {
+                    "id": str(acc.id),
+                    "name": acc.name,
+                    "type": acc.type,
+                    "balance": float(acc.balance) if acc.balance else 0,
+                    "currency": acc.currency,
+                    "bank_name": acc.bank_name,
+                    "created_at": acc.created_at.isoformat() if acc.created_at else None
+                }
+                for acc in accounts
+            ],
+            "transactions": [
+                {
+                    "id": str(tx.id),
+                    "date": tx.date.isoformat() if tx.date else None,
+                    "amount": float(tx.amount) if tx.amount else 0,
+                    "description": tx.description,
+                    "type": tx.type,
+                    "category": tx.category.name if tx.category else None,
+                    "account": tx.account.name if tx.account else None,
+                    "created_at": tx.created_at.isoformat() if tx.created_at else None
+                }
+                for tx in transactions
+            ],
+            "investments": [
+                {
+                    "id": str(inv.id),
+                    "symbol": inv.symbol,
+                    "name": inv.name,
+                    "shares": float(inv.shares) if inv.shares else 0,
+                    "purchase_price": float(inv.purchase_price) if inv.purchase_price else 0,
+                    "purchase_date": inv.purchase_date.isoformat() if inv.purchase_date else None
+                }
+                for inv in investments
+            ],
+            "total_records": {
+                "accounts": len(accounts),
+                "transactions": len(transactions),
+                "investments": len(investments)
+            }
+        }
+        
+        logger.info(f"GDPR Export completado: {len(accounts)} cuentas, {len(transactions)} transacciones, {len(investments)} inversiones")
+        
+        return export_data
+        
+    except Exception as e:
+        logger.error(f"Error al exportar datos GDPR: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Error al exportar datos. Por favor, intenta de nuevo."
+        )
 

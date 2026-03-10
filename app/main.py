@@ -18,6 +18,22 @@ app = FastAPI(
     redoc_url="/redoc"
 )
 
+
+# ============================================
+# STARTUP EVENT: Inicializar sistema de encriptación
+# ============================================
+@app.on_event("startup")
+async def startup_event():
+    """
+    Evento de inicio de la aplicación.
+    Los campos sensibles se encriptan automáticamente via TypeDecorators (AES-256-GCM).
+    """
+    logger.info("🔐 Sistema de encriptación activo")
+    logger.info("   Campos sensibles encriptados via TypeDecorators (AES-256-GCM)")
+    logger.info("   Encriptación/desencriptación automática transparente")
+        # No fallar el startup, solo advertir
+
+
 # Log de inicio de aplicación
 logger.info("=" * 60)
 logger.info("Iniciando Finanzas Personal API v1.0.0")
@@ -47,12 +63,19 @@ app.add_middleware(
     max_age=3600,  # Cache de CORS por 1 hora
 )
 
-# Security Middleware - Trusted Host (previene ataques Host Header)
-# Temporalmente deshabilitado para debugging CORS
-# app.add_middleware(
-#     TrustedHostMiddleware,
-#     allowed_hosts=["localhost", "127.0.0.1", "*.yourdomain.com"]
-# )
+# Security Middleware - Trusted Host (previene ataques Host Header Injection)
+# Activo en producción para mayor seguridad
+if settings.ENVIRONMENT == "production":
+    app.add_middleware(
+        TrustedHostMiddleware,
+        allowed_hosts=[
+            "localhost",
+            "127.0.0.1",
+            "myfi-app-backend.onrender.com",  # Render.com hosting
+            # Agregar otros dominios de producción aquí
+        ]
+    )
+    logger.info("TrustedHostMiddleware habilitado para producción")
 
 
 # Middleware para logging de peticiones
@@ -125,6 +148,18 @@ app.include_router(insights.router, tags=["insights"])
 app.include_router(health.router, tags=["health"])
 app.include_router(investments.router, tags=["investments"])
 app.include_router(budgets.router, tags=["budgets"])
+
+
+# =============================================================
+# HEALTH CHECK ENDPOINT (Cloud Run / Load Balancer)
+# =============================================================
+@app.get("/health", tags=["health-check"])
+async def health_check():
+    """
+    Health check endpoint para Cloud Run y load balancers.
+    Retorna status 200 si la aplicación está funcionando.
+    """
+    return {"status": "ok"}
 
 
 @app.get("/")

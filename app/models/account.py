@@ -1,21 +1,33 @@
-from sqlalchemy import Column, String, Boolean, Numeric, DateTime, Text, CheckConstraint, ForeignKey
+"""
+Modelo Account - Cuentas Bancarias
+===================================
+
+SEGURIDAD (GDPR/PSD2):
+- balance, account_number, notes: Encriptados con AES-256-GCM
+- Los datos se almacenan encriptados en PostgreSQL
+- TypeDecorators manejan encriptación/desencriptación automáticamente
+- Filtrado y agregaciones se hacen en Python (no en SQL)
+"""
+
+from sqlalchemy import Column, String, Boolean, DateTime, CheckConstraint, ForeignKey
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
+from decimal import Decimal
 import uuid
 
 from app.database import Base
+from app.models.encrypted_fields import EncryptedString, EncryptedText, EncryptedNumeric
+
 
 class Account(Base):
     """
     Modelo ORM para la tabla 'accounts'
     
-    Representa cuentas bancarias del usuario
+    Representa cuentas bancarias del usuario.
+    Todos los datos financieros están encriptados con AES-256-GCM.
     """
     
-    # ============================================
-    # Nombre de la tabla en PostgreSQL
-    # ============================================
     __tablename__ = "accounts"
     
     __table_args__ = (
@@ -23,11 +35,10 @@ class Account(Base):
             "type IN ('checking', 'savings', 'investment', 'credit_card', 'cash')",
             name='valid_account_type'
         ),
-        CheckConstraint("balance >= 0", name='positive_balance'),
     )
     
     # ============================================
-    # COLUMNAS (mapean a campos de la tabla)
+    # COLUMNAS IDENTIFICADORAS (no sensibles)
     # ============================================
     
     id = Column(
@@ -40,7 +51,7 @@ class Account(Base):
     user_id = Column(
         UUID(as_uuid=True),
         ForeignKey('users.id', ondelete='CASCADE'),
-        nullable=True,  # Nullable para mantener compatibilidad con datos existentes
+        nullable=True,
         comment="Usuario propietario de la cuenta (FK)"
     )
     
@@ -56,18 +67,11 @@ class Account(Base):
         comment="Tipo: checking, savings, investment, credit_card, cash"
     )
     
-    balance = Column(
-        Numeric(12, 2),
-        nullable=False,
-        default=0.00,
-        comment="Saldo actual de la cuenta"
-    )
-    
     currency = Column(
         String(3),
         nullable=False,
         default='EUR',
-        comment="Moneda de la cuenta"
+        comment="Moneda de la cuenta (ISO 4217)"
     )
     
     bank_name = Column(
@@ -76,23 +80,11 @@ class Account(Base):
         comment="Nombre del banco"
     )
     
-    account_number = Column(
-        String(50),
-        nullable=True,
-        comment="IBAN o número de cuenta"
-    )
-    
     is_active = Column(
         Boolean,
         nullable=False,
         default=True,
         comment="Si la cuenta está activa"
-    )
-    
-    notes = Column(
-        Text,
-        nullable=True,
-        comment="Notas adicionales"
     )
     
     created_at = Column(
@@ -111,14 +103,36 @@ class Account(Base):
     )
     
     # ============================================
-    # RELACIONES (JOINs automáticos)
+    # COLUMNAS ENCRIPTADAS (AES-256-GCM)
+    # ============================================
+    
+    balance = Column(
+        EncryptedNumeric,
+        nullable=True,
+        default=Decimal("0.00"),
+        comment="Saldo actual - ENCRIPTADO AES-256-GCM"
+    )
+    
+    account_number = Column(
+        EncryptedString(50),
+        nullable=True,
+        comment="IBAN/Número de cuenta - ENCRIPTADO AES-256-GCM"
+    )
+    
+    notes = Column(
+        EncryptedText,
+        nullable=True,
+        comment="Notas adicionales - ENCRIPTADO AES-256-GCM"
+    )
+    
+    # ============================================
+    # RELACIONES
     # ============================================
     
     user = relationship(
         "User",
         back_populates="accounts"
     )
-    # Relación con el usuario propietario
     
     transactions = relationship(
         "Transaction",
@@ -127,28 +141,23 @@ class Account(Base):
         lazy="select",
         foreign_keys="[Transaction.account_id]"
     )
-    # Explicación:
-    # - "Transaction": Relacionado con el modelo Transaction
-    # - back_populates="account": La relación inversa
-    # - cascade="all, delete-orphan": Si borras la cuenta, borra sus transacciones
-    # - lazy="select": Carga las transacciones solo cuando las pides
-    # - foreign_keys: Especifica qué FK usar (account_id, NO transfer_account_id)
     
     # ============================================
-    # MÉTODOS ÚTILES
+    # MÉTODOS
     # ============================================
     
     def __repr__(self):
         """Representación legible del objeto"""
-        return f"<Account(id={self.id}, name='{self.name}', balance={self.balance})>"
+        return f"<Account(id={self.id}, name='{self.name}', type='{self.type}')>"
     
     def to_dict(self):
-        """Convierte el objeto a diccionario"""
+        """Convierte el objeto a diccionario con datos desencriptados"""
         return {
             "id": str(self.id),
+            "user_id": str(self.user_id) if self.user_id else None,
             "name": self.name,
             "type": self.type,
-            "balance": float(self.balance),
+            "balance": float(self.balance) if self.balance else 0.0,
             "currency": self.currency,
             "bank_name": self.bank_name,
             "account_number": self.account_number,
@@ -161,15 +170,37 @@ class Account(Base):
     @property
     def transaction_count(self):
         """Número de transacciones de esta cuenta"""
-        return len(self.transactions)
+        return len(self.transactions) if self.transactions else 0
     
-    def calculate_balance(self, db_session):
-        """Calcula el balance sumando todas las transacciones"""
-        from sqlalchemy import func
-        result = db_session.query(
-            func.sum(Transaction.amount)
-        ).filter(
-            Transaction.account_id == self.id
-        ).scalar()
+    def get_balance_as_decimal(self) -> Decimal:
+        """
+        Devuelve el balance como Decimal.
         
-        return float(result) if result else 0.0
+        Returns:
+            Decimal: Balance de la cuenta (0 si es None)
+        """
+        if self.balance is None:
+            return Decimal("0.00")
+        if isinstance(self.balance, Decimal):
+            return self.balance
+        return Decimal(str(self.balance))
+    
+    def add_to_balance(self, amount: Decimal):
+        """
+        Añade un monto al balance.
+        
+        Args:
+            amount: Decimal a añadir (puede ser negativo)
+        """
+        current = self.get_balance_as_decimal()
+        self.balance = current + Decimal(str(amount))
+    
+    def subtract_from_balance(self, amount: Decimal):
+        """
+        Resta un monto del balance.
+        
+        Args:
+            amount: Decimal a restar
+        """
+        current = self.get_balance_as_decimal()
+        self.balance = current - Decimal(str(amount))

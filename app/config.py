@@ -1,11 +1,12 @@
 from pydantic_settings import BaseSettings, SettingsConfigDict
-from pydantic import field_validator
+from pydantic import field_validator, ValidationInfo
 from typing import List, Union
 from pathlib import Path
+import warnings
 
 class Settings(BaseSettings):
     # Environment
-    ENVIRONMENT: str = "production"  # "development" or "production"
+    ENVIRONMENT: str = "development"  # "development" or "production"
 
     # Security & JWT
     JWT_SECRET_KEY: str = ""
@@ -16,9 +17,50 @@ class Settings(BaseSettings):
     REFRESH_TOKEN_SECRET_KEY: str = ""
     REFRESH_TOKEN_EXPIRE_DAYS: int = 7
     
+    # Encryption - PSD2 Compliance
+    ENCRYPTION_MASTER_KEY: str = ""
+    ENCRYPTION_KEY_VERSION: int = 1
+    
+    # ============================================
+    # VALIDACIÓN DE SECRETS (Seguridad)
+    # ============================================
+    
+    @field_validator('JWT_SECRET_KEY', 'REFRESH_TOKEN_SECRET_KEY')
+    @classmethod
+    def validate_jwt_secrets(cls, v: str, info: ValidationInfo) -> str:
+        """Valida que los secrets de JWT sean suficientemente seguros"""
+        if not v:
+            warnings.warn(
+                f"⚠️ SEGURIDAD: {info.field_name} no está configurado. "
+                "La aplicación no funcionará correctamente.",
+                UserWarning
+            )
+            return v
+        
+        if len(v) < 32:
+            warnings.warn(
+                f"⚠️ SEGURIDAD: {info.field_name} tiene menos de 32 caracteres. "
+                "Se recomienda usar: python -c 'import secrets; print(secrets.token_urlsafe(48))'",
+                UserWarning
+            )
+        
+        return v
+    
+    @field_validator('ENCRYPTION_MASTER_KEY')
+    @classmethod
+    def validate_encryption_key(cls, v: str) -> str:
+        """Valida la clave maestra de encriptación"""
+        if v and len(v) < 32:
+            warnings.warn(
+                "⚠️ SEGURIDAD: ENCRYPTION_MASTER_KEY tiene menos de 32 caracteres. "
+                "Se recomienda usar: python -c 'import secrets; print(secrets.token_urlsafe(32))'",
+                UserWarning
+            )
+        return v
+    
     # Logging
     LOG_LEVEL: str = "INFO"
-    LOGS_DIR: Path = Path("../logsBackend")
+    LOGS_DIR: str = "../logsBackend"  # Relativo a /app en Docker, será /logsBackend
     LOG_ROTATION_SIZE_MB: int = 10
     LOG_BACKUP_COUNT: int = 5
     

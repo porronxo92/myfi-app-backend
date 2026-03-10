@@ -11,6 +11,7 @@ import bcrypt
 from app.models.user import User
 from app.schemas.user import UserCreate, UserUpdate, PasswordChange
 from app.utils.logger import get_logger
+from app.utils.pii_sanitizer import mask_email, mask_username, mask_uuid
 
 logger = get_logger(__name__)
 
@@ -85,13 +86,13 @@ class UserService:
         Returns:
             Usuario o None si no existe
         """
-        logger.info(f"Buscando usuario con ID: {user_id}")
+        logger.info(f"Buscando usuario con ID: {mask_uuid(str(user_id))}")
         user = db.query(User).filter(User.id == user_id).first()
         
         if user:
-            logger.info(f"Usuario encontrado: {user.email}")
+            logger.info(f"Usuario encontrado: ID={mask_uuid(str(user.id))}")
         else:
-            logger.warning(f"Usuario no encontrado: {user_id}")
+            logger.warning(f"Usuario no encontrado: {mask_uuid(str(user_id))}")
         
         return user
     
@@ -107,7 +108,7 @@ class UserService:
         Returns:
             Usuario o None si no existe
         """
-        logger.info(f"Buscando usuario con email: {email}")
+        logger.info(f"Buscando usuario con email: {mask_email(email)}")
         return db.query(User).filter(User.email == email).first()
     
     @staticmethod
@@ -122,7 +123,7 @@ class UserService:
         Returns:
             Usuario o None si no existe
         """
-        logger.info(f"Buscando usuario con username: {username}")
+        logger.info(f"Buscando usuario con username: {mask_username(username)}")
         return db.query(User).filter(User.username == username).first()
     
     @staticmethod
@@ -140,15 +141,15 @@ class UserService:
         Raises:
             ValueError: Si el email o username ya existe
         """
-        logger.info(f"Creando nuevo usuario: {user_data.email}")
+        logger.info(f"Creando nuevo usuario: {mask_email(user_data.email)}")
         
         # Verificar que el email no exista
         if UserService.get_by_email(db, user_data.email):
-            raise ValueError(f"El email {user_data.email} ya está registrado")
+            raise ValueError("El email proporcionado ya está registrado")
         
         # Verificar que el username no exista (si se proporciona)
         if user_data.username and UserService.get_by_username(db, user_data.username):
-            raise ValueError(f"El username {user_data.username} ya está en uso")
+            raise ValueError("El username proporcionado ya está en uso")
         
         # Hashear la contraseña
         password_hash = UserService._hash_password(user_data.password)
@@ -161,7 +162,7 @@ class UserService:
         db.commit()
         db.refresh(user)
         
-        logger.info(f"Usuario creado: {user.id}")
+        logger.info(f"Usuario creado: {mask_uuid(str(user.id))}")
         return user
     
     @staticmethod
@@ -180,7 +181,7 @@ class UserService:
         Raises:
             ValueError: Si el email o username ya existe
         """
-        logger.info(f"Actualizando usuario: {user_id}")
+        logger.info(f"Actualizando usuario: {mask_uuid(str(user_id))}")
         
         user = UserService.get_by_id(db, user_id)
         if not user:
@@ -191,12 +192,12 @@ class UserService:
         # Verificar email único (si se está cambiando)
         if 'email' in update_data and update_data['email'] != user.email:
             if UserService.get_by_email(db, update_data['email']):
-                raise ValueError(f"El email {update_data['email']} ya está registrado")
+                raise ValueError("El email proporcionado ya está registrado")
         
         # Verificar username único (si se está cambiando)
         if 'username' in update_data and update_data['username'] != user.username:
             if UserService.get_by_username(db, update_data['username']):
-                raise ValueError(f"El username {update_data['username']} ya está en uso")
+                raise ValueError("El username proporcionado ya está en uso")
         
         # Si se proporciona nueva contraseña
         if user_data.password:
@@ -209,7 +210,7 @@ class UserService:
         db.commit()
         db.refresh(user)
         
-        logger.info(f"Usuario actualizado: {user.id}")
+        logger.info(f"Usuario actualizado: {mask_uuid(str(user.id))}")
         return user
     
     @staticmethod
@@ -224,7 +225,7 @@ class UserService:
         Returns:
             True si se eliminó, False si no existe
         """
-        logger.info(f"Eliminando usuario: {user_id}")
+        logger.info(f"Eliminando usuario: {mask_uuid(str(user_id))}")
         
         user = UserService.get_by_id(db, user_id)
         if not user:
@@ -233,7 +234,7 @@ class UserService:
         db.delete(user)
         db.commit()
         
-        logger.info(f"Usuario eliminado: {user_id}")
+        logger.info(f"Usuario eliminado: {mask_uuid(str(user_id))}")
         return True
     
     @staticmethod
@@ -249,26 +250,26 @@ class UserService:
         Returns:
             Usuario si las credenciales son correctas, None si no
         """
-        logger.info(f"Intentando autenticar usuario: {email}")
+        logger.info(f"Intentando autenticar usuario: {mask_email(email)}")
         
         user = UserService.get_by_email(db, email)
         if not user:
-            logger.warning(f"Usuario no encontrado: {email}")
+            logger.warning(f"Usuario no encontrado para autenticación: {mask_email(email)}")
             return None
         
         if not user.is_active:
-            logger.warning(f"Usuario inactivo: {email}")
+            logger.warning(f"Usuario inactivo intenta autenticarse: {mask_uuid(str(user.id))}")
             return None
         
         if not UserService._verify_password(password, user.password_hash):
-            logger.warning(f"Contraseña incorrecta para: {email}")
+            logger.warning(f"Contraseña incorrecta para usuario: {mask_uuid(str(user.id))}")
             return None
         
         # Actualizar last_login
         user.last_login = datetime.now()
         db.commit()
         
-        logger.info(f"Usuario autenticado: {email}")
+        logger.info(f"Usuario autenticado: {mask_uuid(str(user.id))}")
         return user
     
     @staticmethod
@@ -287,7 +288,7 @@ class UserService:
         Raises:
             ValueError: Si el usuario no existe
         """
-        logger.info(f"Cambiando contraseña para usuario: {user_id}")
+        logger.info(f"Cambiando contraseña para usuario: {mask_uuid(str(user_id))}")
         
         user = UserService.get_by_id(db, user_id)
         if not user:
@@ -295,14 +296,14 @@ class UserService:
         
         # Verificar contraseña actual
         if not UserService._verify_password(password_data.current_password, user.password_hash):
-            logger.warning(f"Contraseña actual incorrecta para usuario: {user_id}")
+            logger.warning(f"Contraseña actual incorrecta para usuario: {mask_uuid(str(user_id))}")
             return False
         
         # Actualizar a nueva contraseña
         user.password_hash = UserService._hash_password(password_data.new_password)
         db.commit()
         
-        logger.info(f"Contraseña cambiada para usuario: {user_id}")
+        logger.info(f"Contraseña cambiada para usuario: {mask_uuid(str(user_id))}")
         return True
     
     @staticmethod

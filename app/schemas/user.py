@@ -178,3 +178,23 @@ class RefreshTokenRequest(BaseModel):
     }
     """
     refresh_token: str
+
+# ============================================
+# SCHEMA PARA ACTUALIZAR FOTO DE PERFIL
+# ============================================
+class ProfilePictureUpdate(BaseModel):
+    """
+    PUT /api/users/me/profile-picture
+    
+    Request:
+    {
+      "profile_picture": "data:image/jpeg;base64,/9j/4AAQ..."
+    }
+    o
+    {
+      "profile_picture": "/9j/4AAQ..."  (solo base64)
+    }
+    
+    El backend acepta data URL o base64 puro y extrae el base64 automáticamente.
+    """
+    profile_picture: str = Field(..., description="Imagen en base64 o data URL (data:image/...;base64,...)")

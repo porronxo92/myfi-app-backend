@@ -1,15 +1,34 @@
 import logging
 import sys
+import os
 from pathlib import Path
 from logging.handlers import TimedRotatingFileHandler
 from datetime import datetime
 from typing import Optional
 
-# Directorio de logs
-LOGS_DIR = Path(r"C:\Users\rcruzd\OneDrive - Indra\Documentos\Workspace VS\AppFinanzas\logsBackend")
+# Importar configuración de settings (lazy import para evitar circular dependency)
+def get_logs_dir() -> Path:
+    """Obtiene el directorio de logs desde settings o usa fallback"""
+    try:
+        from app.config import settings
+        logs_dir = Path(settings.LOGS_DIR)
+    except Exception:
+        # Fallback para desarrollo local
+        logs_dir = Path(r"C:\Users\rcruzd\OneDrive - Indra\Documentos\Workspace VS\AppFinanzas\logsBackend")
+    
+    # Crear directorio si no existe (solo si no estamos en Cloud Run y tenemos permisos)
+    if os.environ.get("K_SERVICE") is None:  # K_SERVICE indica Cloud Run
+        try:
+            logs_dir.mkdir(parents=True, exist_ok=True)
+        except (PermissionError, OSError) as e:
+            # Si no tenemos permisos, intentar usar /tmp como fallback
+            logs_dir = Path("/tmp/logs") if os.name != "nt" else Path.cwd() / "logs"
+            logs_dir.mkdir(parents=True, exist_ok=True)
+    
+    return logs_dir
 
-# Crear directorio si no existe
-LOGS_DIR.mkdir(parents=True, exist_ok=True)
+# Directorio de logs dinámico
+LOGS_DIR = get_logs_dir()
 
 # Formato de logs con el nombre del fichero Python
 LOG_FORMAT = "%(asctime)s | %(levelname)-8s | %(filename)s | %(funcName)s:%(lineno)d | %(message)s"
@@ -47,6 +66,15 @@ _shared_console_handler = None
 def get_shared_file_handler():
     """Obtiene o crea el handler de archivo compartido"""
     global _shared_file_handler
+    
+    # En entornos containerizados, NO usar archivos (solo stdout)
+    # - Cloud Run: K_SERVICE
+    # - Docker: Detectar con /.dockerenv o DOCKER_CONTAINER
+    is_cloud_run = os.environ.get("K_SERVICE") is not None
+    is_docker = os.path.exists("/.dockerenv") or os.environ.get("DOCKER_CONTAINER") is not None
+    
+    if is_cloud_run or is_docker:
+        return None
     
     if _shared_file_handler is None:
         log_file = get_log_filename()
@@ -116,12 +144,16 @@ def setup_logger(
     if logger.handlers:
         return logger
     
-    # Agregar handler de archivo compartido
-    logger.addHandler(get_shared_file_handler())
+    # Agregar handler de archivo compartido (solo en local, no en Cloud Run/Docker)
+    file_handler = get_shared_file_handler()
+    if file_handler is not None:
+        logger.addHandler(file_handler)
     
     # Agregar handler de consola si está habilitado
     if console_output:
-        logger.addHandler(get_shared_console_handler(colored_console))
+        console_handler = get_shared_console_handler(colored_console)
+        if console_handler is not None:
+            logger.addHandler(console_handler)
     
     return logger
 

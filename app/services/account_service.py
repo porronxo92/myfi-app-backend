@@ -179,6 +179,8 @@ class AccountService:
         """
         Calcular balance total de las cuentas del usuario
         
+        NOTA: Cálculo en Python porque balance está encriptado (no se puede usar SUM en SQL)
+        
         Args:
             db: Sesión de base de datos
             user_id: UUID del usuario propietario
@@ -187,10 +189,13 @@ class AccountService:
         Returns:
             Balance total
         """
-        query = db.query(func.sum(Account.balance)).filter(Account.user_id == user_id)
+        query = db.query(Account).filter(Account.user_id == user_id)
         
         if is_active:
             query = query.filter(Account.is_active == is_active)
         
-        total = query.scalar()
-        return float(total) if total else 0.0
+        accounts = query.all()
+        
+        # Calcular suma en Python (datos desencriptados por TypeDecorator)
+        total = sum(float(a.balance) if a.balance is not None else 0.0 for a in accounts)
+        return total

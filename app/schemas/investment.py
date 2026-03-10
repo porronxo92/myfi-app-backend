@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field, field_validator, ConfigDict
+from pydantic import BaseModel, Field, field_validator, model_validator, ConfigDict
 from typing import Optional, Literal
 from uuid import UUID
 from datetime import date, datetime
@@ -131,6 +131,36 @@ class InvestmentResponse(InvestmentBase):
     user_id: UUID = Field(serialization_alias="userId")
     created_at: datetime = Field(serialization_alias="createdAt")
     updated_at: datetime = Field(serialization_alias="updatedAt")
+    
+    @model_validator(mode='before')
+    @classmethod
+    def populate_encrypted_fields(cls, data):
+        """
+        Lee campos del modelo (TypeDecorator desencripta automáticamente).
+        
+        NOTA: Los campos symbol, company_name, shares, average_price ahora son 
+        EncryptedString/EncryptedNumeric que se desencriptan automáticamente.
+        """
+        if hasattr(data, 'symbol'):
+            if not isinstance(data, dict):
+                obj_data = {
+                    'id': data.id,
+                    'user_id': data.user_id,
+                    # TypeDecorator desencripta automáticamente
+                    'symbol': data.symbol,
+                    'company_name': data.company_name,
+                    'shares': data.shares,
+                    'average_price': data.average_price,
+                    'purchase_date': data.purchase_date,
+                    'sale_price': data.sale_price,
+                    'sale_date': data.sale_date,
+                    'status': data.status.value if hasattr(data.status, 'value') else data.status,
+                    'notes': data.notes,
+                    'created_at': data.created_at,
+                    'updated_at': data.updated_at,
+                }
+                return obj_data
+        return data
 
 
 # ============================================

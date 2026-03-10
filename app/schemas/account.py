@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field, UUID4, ConfigDict, field_serializer
+from pydantic import BaseModel, Field, UUID4, ConfigDict, field_serializer, model_validator
 from typing import Optional
 from datetime import datetime
 from uuid import UUID
@@ -85,6 +85,36 @@ class AccountResponse(AccountBase):
     calculated_balance: Optional[float] = None
     
     model_config = ConfigDict(from_attributes=True)
+    
+    @model_validator(mode='before')
+    @classmethod
+    def populate_encrypted_fields(cls, data):
+        """
+        Lee campos del modelo (TypeDecorator desencripta automáticamente).
+        
+        NOTA: Los campos balance, account_number, notes ahora son EncryptedNumeric/EncryptedString
+        que se desencriptan automáticamente por SQLAlchemy TypeDecorator.
+        """
+        if hasattr(data, 'balance'):
+            if not isinstance(data, dict):
+                obj_data = {
+                    'id': data.id,
+                    'name': data.name,
+                    'type': data.type,
+                    # TypeDecorator desencripta automáticamente
+                    'balance': float(data.balance) if data.balance is not None else 0.0,
+                    'currency': data.currency,
+                    'bank_name': data.bank_name,
+                    'account_number': data.account_number,
+                    'is_active': data.is_active,
+                    'notes': data.notes,
+                    'created_at': data.created_at,
+                    # Campos calculados (si existen)
+                    'transaction_count': getattr(data, 'transaction_count', 0),
+                    'calculated_balance': getattr(data, 'calculated_balance', None),
+                }
+                return obj_data
+        return data
     
     @field_serializer('created_at')
     def serialize_datetime(self, dt: datetime, _info) -> str:

@@ -186,8 +186,8 @@ class TransactionResponse(TransactionBase):
         """
         Popula los campos de relaciones desde el ORM.
         
-        Extrae account_name, category_name y category_color desde las relaciones
-        cargadas por joinedload() en el servicio, evitando el problema N+1.
+        NOTA: Los campos amount y description ahora son EncryptedNumeric/EncryptedString
+        que se desencriptan automáticamente por SQLAlchemy TypeDecorator.
         """
         # Si data es un objeto ORM (Transaction), extraemos las relaciones
         if hasattr(data, 'account'):
@@ -196,7 +196,8 @@ class TransactionResponse(TransactionBase):
                     'id': data.id,
                     'account_id': data.account_id,
                     'date': data.date,
-                    'amount': data.amount,
+                    # TypeDecorator desencripta automáticamente
+                    'amount': float(data.amount) if data.amount is not None else 0.0,
                     'description': data.description,
                     'category_id': data.category_id,
                     'type': data.type,

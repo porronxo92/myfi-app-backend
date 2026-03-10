@@ -1,0 +1,103 @@
+# =============================================================
+# Docker Compose - Desarrollo Local
+# =============================================================
+# Facilita el desarrollo con base de datos PostgreSQL incluida
+# y gestión de volúmenes para logs persistentes
+# =============================================================
+
+services:
+  # ---- API FastAPI ----
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: finanzas-api
+    ports:
+      - "8080:8080"
+    environment:
+      # Database (conecta al servicio de PostgreSQL)
+      DATABASE_URL_LOCALHOST: postgresql://postgres:postgres@db:5432/app_finance
+      DATABASE_URL_PROD: postgresql://postgres:postgres@db:5432/app_finance
+      ENVIRONMENT: development
+      
+      # Indicador de entorno Docker (para logging)
+      DOCKER_CONTAINER: "true"
+      
+      # Security (generar con: python -c 'import secrets; print(secrets.token_urlsafe(48))')
+      # IMPORTANTE: Cambiar estos valores por secretos reales
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:-changeme-generate-secure-key}
+      REFRESH_TOKEN_SECRET_KEY: ${REFRESH_TOKEN_SECRET_KEY:-changeme-generate-secure-key}
+      ENCRYPTION_MASTER_KEY: ${ENCRYPTION_MASTER_KEY:-changeme-generate-secure-key}
+      
+      # CORS
+      CORS_ORIGINS: http://localhost:4200,http://localhost:3000
+      
+      # Logging (usar directorio dentro del contenedor)
+      LOG_LEVEL: INFO
+      LOGS_DIR: /app/logs
+      
+      # APIs externas (configurar según necesidad)
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      FINNHUB_API_KEY: ${FINNHUB_API_KEY:-}
+      ALPHA_VANTAGE_API_KEY: ${ALPHA_VANTAGE_API_KEY:-}
+      BRANDFETCH_CLIENT_ID: ${BRANDFETCH_CLIENT_ID:-}
+    
+    volumes:
+      # Montar logs para persistencia (opcional para desarrollo)
+      - ./logs:/app/logs
+      # Montar uploads temporales
+      - ./temp_uploads:/app/temp_uploads
+    
+    depends_on:
+      db:
+        condition: service_healthy
+    
+    networks:
+      - finanzas-network
+    
+    restart: unless-stopped
+    
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8080/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # ---- PostgreSQL Database ----
+  db:
+    image: postgres:15-alpine
+    container_name: finanzas-db
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: app_finance
+      POSTGRES_INITDB_ARGS: "-E UTF8 --locale=es_ES.UTF-8"
+    ports:
+      - "5433:5432"  # Puerto 5433 en local → 5432 dentro del contenedor
+    volumes:
+      # Persistencia de datos
+      - postgres-data:/var/lib/postgresql/data
+      # Script de inicialización (se ejecuta automáticamente la primera vez)
+      - ./app/bbdd/schema_app_finance.sql:/docker-entrypoint-initdb.d/01_schema.sql:ro
+    networks:
+      - finanzas-network
+    
+    restart: unless-stopped
+    
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+# ---- Volúmenes ----
+volumes:
+  postgres-data:
+    name: finanzas-postgres-data
+
+# ---- Red ----
+networks:
+  finanzas-network:
+    name: finanzas-network
+    driver: bridge

@@ -80,16 +80,26 @@ class TransactionService:
         if date_to:
             query = query.filter(Transaction.date <= date_to)
         
-        if min_amount is not None:
-            query = query.filter(Transaction.amount >= min_amount)
-        
-        if max_amount is not None:
-            query = query.filter(Transaction.amount <= max_amount)
-        
         # Ordenar por fecha descendente (más recientes primero)
-        transactions = query.order_by(Transaction.date.desc()).offset(skip).limit(limit).all()
+        # NOTA: Los filtros de amount se aplican en Python porque el campo está encriptado
+        all_transactions = query.order_by(Transaction.date.desc()).all()
         
-        logger.info(f"Se encontraron {len(transactions)} transacciones")
+        # Filtrar por monto en Python (campos encriptados)
+        if min_amount is not None or max_amount is not None:
+            filtered_transactions = []
+            for t in all_transactions:
+                amount = float(t.amount) if t.amount is not None else 0.0
+                if min_amount is not None and amount < min_amount:
+                    continue
+                if max_amount is not None and amount > max_amount:
+                    continue
+                filtered_transactions.append(t)
+            all_transactions = filtered_transactions
+        
+        # Aplicar paginación después del filtrado en Python
+        transactions = all_transactions[skip:skip + limit]
+        
+        logger.info(f"Se encontraron {len(transactions)} transacciones (de {len(all_transactions)} totales)")
         return transactions
     
     @staticmethod
@@ -354,6 +364,8 @@ class TransactionService:
         """
         Obtener resumen financiero del usuario (ingresos, gastos, transferencias)
         
+        NOTA: Cálculo en Python porque amount está encriptado (no se puede usar SUM en SQL)
+        
         Args:
             db: Sesión de base de datos
             user_id: UUID del usuario
@@ -364,10 +376,8 @@ class TransactionService:
         Returns:
             Diccionario con total_income, total_expense, balance
         """
-        query = db.query(
-            func.sum(Transaction.amount).filter(Transaction.amount > 0).label('income'),
-            func.sum(Transaction.amount).filter(Transaction.amount < 0).label('expense')
-        ).join(
+        # Query base sin agregaciones SQL (amount está encriptado)
+        query = db.query(Transaction).join(
             Account, Transaction.account_id == Account.id
         ).filter(
             Account.user_id == user_id
@@ -382,10 +392,18 @@ class TransactionService:
         if date_to:
             query = query.filter(Transaction.date <= date_to)
         
-        result = query.first()
+        transactions = query.all()
         
-        income = float(result.income) if result.income else 0.0
-        expense = float(result.expense) if result.expense else 0.0
+        # Calcular sumas en Python (datos desencriptados por TypeDecorator)
+        income = 0.0
+        expense = 0.0
+        
+        for t in transactions:
+            amount = float(t.amount) if t.amount is not None else 0.0
+            if amount > 0:
+                income += amount
+            else:
+                expense += amount
         
         return {
             "total_income": income,

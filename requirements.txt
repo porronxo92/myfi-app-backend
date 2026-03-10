@@ -16,6 +16,9 @@ bcrypt==4.2.1
 PyJWT==2.9.0
 python-jose[cryptography]==3.3.0
 
+# Encryption (PSD2 Compliance)
+cryptography==41.0.7  # AES-256-GCM para encriptación de datos sensibles
+
 # Google Gemini AI
 google-generativeai==0.8.3
 
