@@ -1,12 +1,12 @@
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from pydantic import field_validator, ValidationInfo
-from typing import List, Union
+from typing import List, Union, Literal
 from pathlib import Path
 import warnings
 
 class Settings(BaseSettings):
     # Environment
-    ENVIRONMENT: str = "development"  # "development" or "production"
+    ENVIRONMENT: Literal["development", "pre", "production"] = "development"
 
     # Security & JWT
     JWT_SECRET_KEY: str = ""
@@ -66,7 +66,10 @@ class Settings(BaseSettings):
     
     # Database
     DATABASE_URL_LOCALHOST: str = ""
+    DATABASE_URL_PRE: str = ""  # For PRE environment (can be same as DEV or separate)
     DATABASE_URL_PROD: str = ""
+    DB_POOL_SIZE: int = 5
+    DB_POOL_OVERFLOW: int = 10
     
     # LLM Configuration
     GEMINI_API_KEY: str = ""
@@ -92,6 +95,12 @@ class Settings(BaseSettings):
     
     # CORS
     CORS_ORIGINS: Union[str, List[str]] = "http://localhost:4200,http://localhost:3000"
+    CORS_MAX_AGE: int = 3600  # Cache de CORS en segundos
+    
+    # Environment-specific URLs
+    FRONTEND_URL: str = "http://localhost:4200"  # URL del frontend según entorno
+    BACKEND_URL: str = "http://localhost:8000"  # URL del backend según entorno
+    ALLOWED_HOSTS: Union[str, List[str]] = "localhost,127.0.0.1"  # Hosts permitidos para TrustedHostMiddleware
     
     # Rate Limiting
     RATE_LIMIT_REQUESTS: int = 100
@@ -103,9 +112,24 @@ class Settings(BaseSettings):
 
     @property
     def DATABASE_URL(self) -> str:
+        """Selecciona la URL de base de datos según el entorno"""
         if self.ENVIRONMENT == "production":
             return self.DATABASE_URL_PROD
+        elif self.ENVIRONMENT == "pre":
+            return self.DATABASE_URL_PRE
         return self.DATABASE_URL_LOCALHOST
+    
+    @field_validator('ENVIRONMENT')
+    @classmethod
+    def validate_environment(cls, v: str) -> str:
+        """Valida que el entorno sea válido"""
+        valid_environments = ["development", "pre", "production"]
+        if v not in valid_environments:
+            raise ValueError(
+                f"ENVIRONMENT debe ser uno de: {', '.join(valid_environments)}. "
+                f"Valor recibido: {v}"
+            )
+        return v
     
     @field_validator('ALLOWED_EXTENSIONS')
     @classmethod
@@ -119,6 +143,14 @@ class Settings(BaseSettings):
     def parse_origins(cls, v):
         if isinstance(v, str):
             return [origin.strip() for origin in v.split(',')]
+        return v
+    
+    @field_validator('ALLOWED_HOSTS')
+    @classmethod
+    def parse_allowed_hosts(cls, v):
+        """Parse ALLOWED_HOSTS from comma-separated string to list"""
+        if isinstance(v, str):
+            return [host.strip() for host in v.split(',')]
         return v
     
     model_config = SettingsConfigDict(

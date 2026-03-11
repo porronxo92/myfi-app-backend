@@ -1,0 +1,289 @@
+name: Deploy to GCP Cloud Run (PRO Environment)
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:  # Permite ejecución manual
+
+env:
+  PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+  REGION: europe-west1
+  SERVICE_NAME: finanzas-api
+  IMAGE_NAME: gcr.io/${{ secrets.GCP_PROJECT_ID }}/finanzas-api
+
+jobs:
+  deploy-production:
+    runs-on: ubuntu-latest
+    environment: production
+    
+    permissions:
+      contents: read
+      id-token: write  # Required for Workload Identity Federation
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Notify deployment start
+        run: |
+          echo "🚀 Iniciando deployment a PRODUCTION (GCP Cloud Run)"
+          echo "Branch: ${{ github.ref_name }}"
+          echo "Commit: ${{ github.sha }}"
+          echo "Author: ${{ github.actor }}"
+          echo "Project: ${{ secrets.GCP_PROJECT_ID }}"
+          echo "Region: $REGION"
+      
+      - name: Authenticate to Google Cloud
+        id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          # Opción 1: Workload Identity Federation (recomendado)
+          workload_identity_provider: ${{ secrets.WIF_PROVIDER }}
+          service_account: ${{ secrets.WIF_SERVICE_ACCOUNT }}
+          
+          # Opción 2: Service Account Key (alternativa)
+          # Descomentar si usas service account key en lugar de WIF:
+          # credentials_json: ${{ secrets.GCP_SA_KEY }}
+      
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+      
+      - name: Configure Docker for GCR
+        run: |
+          gcloud auth configure-docker
+      
+      - name: Build container image
+        run: |
+          echo "🏗️  Building container image..."
+          docker build \
+            --tag $IMAGE_NAME:${{ github.sha }} \
+            --tag $IMAGE_NAME:latest \
+            --build-arg BUILD_DATE=$(date -u +'%Y-%m-%dT%H:%M:%SZ') \
+            --build-arg VCS_REF=${{ github.sha }} \
+            --build-arg VERSION=${{ github.ref_name }} \
+            .
+          
+          echo "✅ Container image built successfully"
+          docker images | grep finanzas-api
+      
+      - name: Push image to Google Container Registry
+        run: |
+          echo "📤 Pushing image to GCR..."
+          docker push $IMAGE_NAME:${{ github.sha }}
+          docker push $IMAGE_NAME:latest
+          echo "✅ Image pushed successfully"
+      
+      - name: Deploy to Cloud Run
+        id: deploy
+        run: |
+          echo "🚀 Deploying to Cloud Run..."
+          
+          gcloud run deploy $SERVICE_NAME \
+            --image $IMAGE_NAME:${{ github.sha }} \
+            --platform managed \
+            --region $REGION \
+            --allow-unauthenticated \
+            --memory 512Mi \
+            --cpu 1 \
+            --min-instances 0 \
+            --max-instances 10 \
+            --concurrency 80 \
+            --timeout 60 \
+            --port 8080 \
+            --set-env-vars="ENVIRONMENT=production,LOG_LEVEL=INFO,LLM_PROVIDER=gemini,LLM_MODEL=gemini-2.0-flash,FINNHUB_MAX_CALLS_PER_MINUTE=60,ALPHA_VANTAGE_MAX_CALLS_PER_DAY=25,ALPHA_VANTAGE_BASE_URL=https://www.alphavantage.co/query,DB_POOL_SIZE=20,DB_POOL_OVERFLOW=40,CORS_MAX_AGE=86400,MAX_FILE_SIZE_MB=10,ALLOWED_EXTENSIONS=pdf,xlsx,csv,txt,RATE_LIMIT_REQUESTS=200,RATE_LIMIT_WINDOW=60,LOGIN_RATE_LIMIT_ATTEMPTS=5,LOGIN_RATE_LIMIT_WINDOW_MINUTES=15,JWT_ALGORITHM=HS256,JWT_ACCESS_TOKEN_EXPIRE_MINUTES=30,REFRESH_TOKEN_EXPIRE_DAYS=7,ENCRYPTION_KEY_VERSION=1,LOG_ROTATION_SIZE_MB=10,LOG_BACKUP_COUNT=5" \
+            --set-secrets="JWT_SECRET_KEY=jwt-secret-key:latest,REFRESH_TOKEN_SECRET_KEY=refresh-token-secret:latest,ENCRYPTION_MASTER_KEY=encryption-master-key:latest,DATABASE_URL_PROD=database-url-prod:latest,GEMINI_API_KEY=gemini-api-key:latest,FINNHUB_API_KEY=finnhub-api-key:latest,ALPHA_VANTAGE_API_KEY=alpha-vantage-api-key:latest,BRANDFETCH_CLIENT_ID=brandfetch-client-id:latest,FRONTEND_URL=frontend-url:latest,BACKEND_URL=backend-url:latest,ALLOWED_HOSTS=allowed-hosts:latest,CORS_ORIGINS=cors-origins:latest,DATABASE_URL_LOCALHOST=database-url-prod:latest,DATABASE_URL_PRE=database-url-prod:latest" \
+            --labels="managed-by=github-actions,environment=production,app=finanzas-api,version=${{ github.ref_name }}" \
+            --service-account="${{ secrets.CLOUD_RUN_SA_EMAIL }}" \
+            --quiet
+          
+          # Obtener la URL del servicio
+          SERVICE_URL=$(gcloud run services describe $SERVICE_NAME --region $REGION --format='value(status.url)')
+          echo "SERVICE_URL=$SERVICE_URL" >> $GITHUB_OUTPUT
+          echo "✅ Deployed to: $SERVICE_URL"
+      
+      - name: Wait for service to be ready
+        run: |
+          echo "⏳ Esperando a que el servicio esté listo..."
+          sleep 10
+      
+      - name: Health check
+        env:
+          SERVICE_URL: ${{ steps.deploy.outputs.SERVICE_URL }}
+        run: |
+          echo "🏥 Verificando health check del backend..."
+          MAX_ATTEMPTS=10
+          ATTEMPT=1
+          
+          while [ $ATTEMPT -le $MAX_ATTEMPTS ]; do
+            echo "Intento $ATTEMPT de $MAX_ATTEMPTS..."
+            
+            # Intentar health check
+            HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "$SERVICE_URL/health" || echo "000")
+            
+            if [ "$HTTP_CODE" -eq 200 ]; then
+              echo "✅ Backend está respondiendo correctamente"
+              
+              # Obtener información adicional
+              RESPONSE=$(curl -s "$SERVICE_URL/health")
+              echo "Health check response: $RESPONSE"
+              
+              # Verificar endpoints adicionales
+              echo ""
+              echo "🔍 Verificando otros endpoints..."
+              curl -s -o /dev/null -w "Docs endpoint: %{http_code}\n" "$SERVICE_URL/docs"
+              curl -s -o /dev/null -w "Redoc endpoint: %{http_code}\n" "$SERVICE_URL/redoc"
+              
+              exit 0
+            elif [ "$HTTP_CODE" -eq 000 ]; then
+              echo "⚠️  No se pudo conectar (esperando deployment...)"
+            else
+              echo "⚠️  HTTP $HTTP_CODE (esperando 200...)"
+            fi
+            
+            if [ $ATTEMPT -lt $MAX_ATTEMPTS ]; then
+              echo "Esperando 10 segundos antes del próximo intento..."
+              sleep 10
+            fi
+            
+            ATTEMPT=$((ATTEMPT + 1))
+          done
+          
+          echo "❌ Health check falló después de $MAX_ATTEMPTS intentos"
+          echo "Revisar logs: gcloud run services logs read $SERVICE_NAME --region $REGION"
+          exit 1
+      
+      - name: Run smoke tests
+        env:
+          SERVICE_URL: ${{ steps.deploy.outputs.SERVICE_URL }}
+        run: |
+          echo "🧪 Ejecutando smoke tests..."
+          
+          # Test 1: Health endpoint
+          echo "Test 1: Health endpoint"
+          curl -f -s "$SERVICE_URL/health" > /dev/null && echo "✅ Health check OK" || (echo "❌ Health check failed" && exit 1)
+          
+          # Test 2: API docs accessible
+          echo "Test 2: API docs"
+          curl -f -s "$SERVICE_URL/docs" > /dev/null && echo "✅ API docs OK" || echo "⚠️  API docs not accessible"
+          
+          # Test 3: CORS headers (sin autenticación)
+          echo "Test 3: CORS preflight"
+          CORS_RESPONSE=$(curl -s -X OPTIONS "$SERVICE_URL/health" \
+            -H "Origin: https://your-frontend-url.com" \
+            -H "Access-Control-Request-Method: GET" \
+            -i | grep -i "access-control")
+          
+          if [ -n "$CORS_RESPONSE" ]; then
+            echo "✅ CORS headers present"
+          else
+            echo "⚠️  CORS headers not found (puede ser esperado si el origen no está permitido)"
+          fi
+          
+          echo ""
+          echo "✅ Smoke tests completados"
+      
+      - name: Get deployment info
+        env:
+          SERVICE_URL: ${{ steps.deploy.outputs.SERVICE_URL }}
+        run: |
+          echo "📊 Información del deployment:"
+          echo ""
+          
+          # Service details
+          gcloud run services describe $SERVICE_NAME \
+            --region $REGION \
+            --format="table(
+              status.url,
+              status.latestCreatedRevisionName,
+              metadata.labels,
+              spec.template.spec.containers[0].resources.limits
+            )"
+          
+          echo ""
+          echo "🔐 Secrets configurados:"
+          gcloud run services describe $SERVICE_NAME \
+            --region $REGION \
+            --format="value(spec.template.spec.containers[0].env)" | \
+            grep -i secret || echo "No se encontraron secrets mapeados"
+      
+      - name: Deployment summary
+        if: success()
+        env:
+          SERVICE_URL: ${{ steps.deploy.outputs.SERVICE_URL }}
+        run: |
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo "✅ Deployment a PRODUCTION completado exitosamente"
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo ""
+          echo "🌐 URLs:"
+          echo "  Backend:  $SERVICE_URL"
+          echo "  API Docs: $SERVICE_URL/docs"
+          echo "  Health:   $SERVICE_URL/health"
+          echo ""
+          echo "📊 Configuración:"
+          echo "  Project:   $PROJECT_ID"
+          echo "  Region:    $REGION"
+          echo "  Service:   $SERVICE_NAME"
+          echo "  Image:     $IMAGE_NAME:${{ github.sha }}"
+          echo "  Commit:    ${{ github.sha }}"
+          echo ""
+          echo "🔍 Verificaciones:"
+          echo "  ✅ Container built & pushed"
+          echo "  ✅ Cloud Run deployed"
+          echo "  ✅ Health check passed"
+          echo "  ✅ Smoke tests completed"
+          echo ""
+          echo "📝 Próximos pasos:"
+          echo "  1. Actualizar BACKEND_URL en frontend de producción"
+          echo "  2. Verificar configuración de CORS_ORIGINS"
+          echo "  3. Probar funcionalidad end-to-end"
+          echo "  4. Monitorear logs: gcloud run services logs read $SERVICE_NAME --region $REGION --follow"
+          echo "  5. Configurar custom domain (opcional)"
+          echo ""
+          echo "📚 Documentación:"
+          echo "  - docs/ENVIRONMENT_SETUP.md"
+          echo "  - docs/RUNBOOK_GCP.md"
+      
+      - name: Notify failure
+        if: failure()
+        run: |
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo "❌ Deployment a PRODUCTION falló"
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo ""
+          echo "🔍 Troubleshooting:"
+          echo "  1. Revisar logs del workflow en GitHub Actions"
+          echo "  2. Ver logs de Cloud Run:"
+          echo "     gcloud run services logs read $SERVICE_NAME --region $REGION"
+          echo "  3. Verificar secrets en GCP Secret Manager:"
+          echo "     gcloud secrets list"
+          echo "  4. Comprobar permisos IAM del service account"
+          echo "  5. Validar Dockerfile y dependencias"
+          echo ""
+          echo "🔐 Verificar secrets necesarios en GitHub:"
+          echo "  - GCP_PROJECT_ID"
+          echo "  - WIF_PROVIDER (para Workload Identity)"
+          echo "  - WIF_SERVICE_ACCOUNT (para Workload Identity)"
+          echo "  - CLOUD_RUN_SA_EMAIL"
+          echo "  O alternativamente:"
+          echo "  - GCP_SA_KEY (service account key JSON)"
+          echo ""
+          echo "📚 Documentación:"
+          echo "  - docs/ENVIRONMENT_SETUP.md"
+          echo "  - docs/RUNBOOK_GCP.md"
+
+      - name: Rollback on critical failure
+        if: failure()
+        continue-on-error: true
+        run: |
+          echo "🔄 Considerando rollback automático..."
+          echo "Por seguridad, el rollback debe hacerse manualmente"
+          echo ""
+          echo "Para hacer rollback a la versión anterior:"
+          echo "  gcloud run services update-traffic $SERVICE_NAME \\"
+          echo "    --region $REGION \\"
+          echo "    --to-revisions=PREVIOUS_REVISION=100"
+          echo ""
+          echo "Para listar revisiones disponibles:"
+          echo "  gcloud run revisions list --service $SERVICE_NAME --region $REGION"

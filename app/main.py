@@ -60,22 +60,17 @@ app.add_middleware(
         "Access-Control-Allow-Methods",
         "Access-Control-Allow-Origin",
     ],
-    max_age=3600,  # Cache de CORS por 1 hora
+    max_age=settings.CORS_MAX_AGE,  # Cache de CORS configurable
 )
 
 # Security Middleware - Trusted Host (previene ataques Host Header Injection)
-# Activo en producción para mayor seguridad
-if settings.ENVIRONMENT == "production":
+# Activo en PRE y producción para mayor seguridad
+if settings.ENVIRONMENT in ["pre", "production"]:
     app.add_middleware(
         TrustedHostMiddleware,
-        allowed_hosts=[
-            "localhost",
-            "127.0.0.1",
-            "myfi-app-backend.onrender.com",  # Render.com hosting
-            # Agregar otros dominios de producción aquí
-        ]
+        allowed_hosts=settings.ALLOWED_HOSTS
     )
-    logger.info("TrustedHostMiddleware habilitado para producción")
+    logger.info(f"TrustedHostMiddleware habilitado para {settings.ENVIRONMENT}: {settings.ALLOWED_HOSTS}")
 
 
 # Middleware para logging de peticiones
@@ -115,7 +110,7 @@ async def log_requests(request: Request, call_next):
         response.headers["X-Frame-Options"] = "SAMEORIGIN"
         response.headers["X-XSS-Protection"] = "1; mode=block"
         # No usar Strict-Transport-Security en desarrollo (localhost)
-        if settings.ENVIRONMENT == "production":
+        if settings.ENVIRONMENT in ["pre", "production"]:
             response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
         response.headers["X-Process-Time"] = str(process_time)
         
@@ -172,17 +167,6 @@ async def root():
         "docs": "/docs",
         "authentication": "JWT (Bearer Token)"
     } 
-
-
-@app.get("/health")
-async def health_check():
-    """Endpoint público de salud sin autenticación"""
-    return {
-        "status": "healthy",
-        "database": "connected",
-        "llm_provider": settings.LLM_PROVIDER,
-        "authentication": "JWT"
-    }
 
 
 if __name__ == "__main__":

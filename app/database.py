@@ -19,7 +19,7 @@ def _get_connect_args() -> dict:
     """
     Obtiene argumentos de conexión según el entorno.
     
-    En producción:
+    En producción y pre:
     - Fuerza SSL/TLS para conexiones seguras
     - Valida certificados del servidor
     
@@ -28,12 +28,12 @@ def _get_connect_args() -> dict:
     """
     logger = _get_logger()
     
-    if settings.ENVIRONMENT == "production":
-        # Producción: SSL requerido
+    if settings.ENVIRONMENT in ["production", "pre"]:
+        # Producción y PRE: SSL requerido
         # 'require' = conexión encriptada obligatoria
         # Para verificación completa de certificado usar 'verify-full' 
         # y proporcionar sslrootcert
-        logger.info("Database: Modo producción - SSL requerido")
+        logger.info(f"Database: Modo {settings.ENVIRONMENT} - SSL requerido")
         return {
             "sslmode": "require"
             # Descomentar para verificación completa:
@@ -51,8 +51,8 @@ def _get_connect_args() -> dict:
 engine = create_engine(
     settings.DATABASE_URL,
     pool_pre_ping=True,
-    pool_size=5,
-    max_overflow=10,
+    pool_size=settings.DB_POOL_SIZE,
+    max_overflow=settings.DB_POOL_OVERFLOW,
     connect_args=_get_connect_args()
 )
 

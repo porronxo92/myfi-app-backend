@@ -1,5 +1,8 @@
 # Archivos de configuración sensibles
+# Excluir todos los archivos .env excepto los .example
 .env
+.env.*
+!.env.*.example
 
 # Python
 __pycache__/
@@ -17,6 +20,7 @@ dist/
 # Archivos temporales
 temp_uploads/
 *.log
+logs/
 
 # IDE
 .vscode/
@@ -28,3 +32,18 @@ temp_uploads/
 # OS
 .DS_Store
 Thumbs.db
+
+# Documentación
+docs/
+*.md
+!README.md
+
+#Base de Datos
+migrations/
+
+# Backups
+backupsBBDD/
+
+#scripts
+tests/
+

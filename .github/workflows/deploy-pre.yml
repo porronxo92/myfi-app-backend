@@ -1,0 +1,132 @@
+name: Deploy to Render (PRE Environment)
+
+on:
+  push:
+    branches:
+      - develop
+  workflow_dispatch:  # Permite ejecución manual
+
+jobs:
+  deploy-pre:
+    runs-on: ubuntu-latest
+    environment: pre
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Notify deployment start
+        run: |
+          echo "🚀 Iniciando deployment a PRE environment (Render)"
+          echo "Branch: ${{ github.ref_name }}"
+          echo "Commit: ${{ github.sha }}"
+          echo "Author: ${{ github.actor }}"
+      
+      - name: Trigger Render deployment
+        env:
+          RENDER_DEPLOY_HOOK: ${{ secrets.RENDER_DEPLOY_HOOK }}
+        run: |
+          if [ -z "$RENDER_DEPLOY_HOOK" ]; then
+            echo "❌ Error: RENDER_DEPLOY_HOOK secret no configurado"
+            echo "Configurar en: Repository Settings → Secrets → Actions"
+            exit 1
+          fi
+          
+          echo "📤 Triggering Render deployment..."
+          RESPONSE=$(curl -s -w "\n%{http_code}" -X POST "$RENDER_DEPLOY_HOOK")
+          HTTP_CODE=$(echo "$RESPONSE" | tail -n 1)
+          BODY=$(echo "$RESPONSE" | head -n -1)
+          
+          echo "HTTP Status: $HTTP_CODE"
+          echo "Response: $BODY"
+          
+          if [ "$HTTP_CODE" -eq 200 ] || [ "$HTTP_CODE" -eq 201 ]; then
+            echo "✅ Render deployment triggered successfully"
+          else
+            echo "❌ Render deployment trigger failed"
+            exit 1
+          fi
+      
+      - name: Wait for deployment
+        run: |
+          echo "⏳ Esperando a que el deployment esté listo..."
+          echo "Render puede tardar 2-5 minutos en completar el deployment"
+          sleep 30  # Esperar inicial de 30 segundos
+      
+      - name: Health check
+        run: |
+          echo "🏥 Verificando health check del backend..."
+          BACKEND_URL="https://myfi-app-backend.onrender.com"
+          MAX_ATTEMPTS=20
+          ATTEMPT=1
+          
+          while [ $ATTEMPT -le $MAX_ATTEMPTS ]; do
+            echo "Intento $ATTEMPT de $MAX_ATTEMPTS..."
+            
+            # Intentar health check
+            HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "$BACKEND_URL/health" || echo "000")
+            
+            if [ "$HTTP_CODE" -eq 200 ]; then
+              echo "✅ Backend está respondiendo correctamente"
+              
+              # Obtener información adicional
+              RESPONSE=$(curl -s "$BACKEND_URL/health")
+              echo "Health check response: $RESPONSE"
+              
+              exit 0
+            elif [ "$HTTP_CODE" -eq 000 ]; then
+              echo "⚠️  No se pudo conectar (esperando deployment...)"
+            else
+              echo "⚠️  HTTP $HTTP_CODE (esperando 200...)"
+            fi
+            
+            if [ $ATTEMPT -lt $MAX_ATTEMPTS ]; then
+              echo "Esperando 15 segundos antes del próximo intento..."
+              sleep 15
+            fi
+            
+            ATTEMPT=$((ATTEMPT + 1))
+          done
+          
+          echo "❌ Health check falló después de $MAX_ATTEMPTS intentos"
+          echo "Revisar logs en Render Dashboard: https://dashboard.render.com/"
+          exit 1
+      
+      - name: Deployment summary
+        if: success()
+        run: |
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo "✅ Deployment a PRE completado exitosamente"
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo ""
+          echo "🌐 URLs:"
+          echo "  Backend:  https://myfi-app-backend.onrender.com"
+          echo "  Frontend: https://myfi-front.netlify.app"
+          echo "  API Docs: https://myfi-app-backend.onrender.com/docs"
+          echo "  Health:   https://myfi-app-backend.onrender.com/health"
+          echo ""
+          echo "📊 Verificaciones:"
+          echo "  ✅ Render deployment triggered"
+          echo "  ✅ Health check passed"
+          echo ""
+          echo "📝 Próximos pasos:"
+          echo "  1. Probar funcionalidad en el frontend"
+          echo "  2. Verificar logs en Render si hay problemas"
+          echo "  3. Validar integración con Netlify frontend"
+      
+      - name: Notify failure
+        if: failure()
+        run: |
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo "❌ Deployment a PRE falló"
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo ""
+          echo "🔍 Troubleshooting:"
+          echo "  1. Revisar logs en Render Dashboard"
+          echo "  2. Verificar variables de entorno en Render"
+          echo "  3. Comprobar RENDER_DEPLOY_HOOK secret"
+          echo "  4. Ver workflow run en GitHub Actions"
+          echo ""
+          echo "📚 Documentación:"
+          echo "  - docs/ENVIRONMENT_SETUP.md"
+          echo "  - docs/RUNBOOK_RENDER.md"
