@@ -148,14 +148,13 @@ app.include_router(budgets.router, tags=["budgets"])
 # =============================================================
 # HEALTH CHECK ENDPOINT (Cloud Run / Load Balancer)
 # =============================================================
-@app.get("/health", tags=["health-check"])
+@app.api_route("/health", methods=["GET", "HEAD"], tags=["health-check"])
 async def health_check():
     """
     Health check endpoint para Cloud Run y load balancers.
     Retorna status 200 si la aplicación está funcionando.
     """
     return {"status": "ok"}
-
 
 @app.get("/")
 async def root():
