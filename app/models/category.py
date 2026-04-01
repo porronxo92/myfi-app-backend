@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, DateTime, CheckConstraint
+from sqlalchemy import Column, String, DateTime, CheckConstraint, ForeignKey, UniqueConstraint
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
@@ -9,59 +9,74 @@ from app.database import Base
 class Category(Base):
     """
     Modelo ORM para la tabla 'categories'
-    
-    Categorías de ingresos y gastos
+
+    Categorías de ingresos y gastos, asociadas a un usuario específico.
+    Cada usuario tiene sus propias categorías (privacidad).
     """
-    
+
     __tablename__ = "categories"
-    
+
     __table_args__ = (
         CheckConstraint(
             "color ~ '^#[0-9A-Fa-f]{6}$'",
             name='valid_hex_color'
         ),
+        # Nombre único por usuario (permite mismo nombre en diferentes usuarios)
+        UniqueConstraint('user_id', 'name', name='unique_category_per_user'),
     )
-    
+
     # ============================================
     # COLUMNAS
     # ============================================
-    
+
     id = Column(
         UUID(as_uuid=True),
         primary_key=True,
         default=uuid.uuid4
     )
-    
+
+    user_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey('users.id', ondelete='CASCADE'),
+        nullable=True,  # NULL = categoría global/plantilla (para migración)
+        index=True,
+        comment="Usuario propietario de la categoría (NULL = global)"
+    )
+
     name = Column(
         String(100),
         nullable=False,
-        unique=True,
         comment="Nombre de la categoría"
     )
-    
+
     type = Column(
         String(20),
         nullable=False,
         comment="income o expense"
     )
-    
+
     color = Column(
         String(7),
         nullable=False,
         default='#6B7280',
         comment="Color hexadecimal para UI"
     )
-    
+
     created_at = Column(
         DateTime(timezone=True),
         server_default=func.now(),
         nullable=False
     )
-    
+
     # ============================================
     # RELACIONES
     # ============================================
-    
+
+    user = relationship(
+        "User",
+        back_populates="categories"
+    )
+
     transactions = relationship(
         "Transaction",
         back_populates="category",

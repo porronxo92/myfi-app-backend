@@ -144,6 +144,13 @@ class User(Base):
         cascade="all, delete-orphan",
         lazy="select"
     )
+
+    categories = relationship(
+        "Category",
+        back_populates="user",
+        cascade="all, delete-orphan",
+        lazy="select"
+    )
     
     # ============================================
     # MÉTODOS

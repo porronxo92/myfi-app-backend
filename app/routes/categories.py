@@ -81,8 +81,10 @@ async def get_all_available_categories(
     _: bool = Depends(check_rate_limit)
 ):
     """
-    Obtener todas las categorías disponibles en la base de datos
-    
+    Obtener todas las categorías disponibles para el usuario:
+    - Categorías globales (predefinidas del sistema)
+    - Categorías propias creadas por el usuario
+
     Devuelve todas las categorías (id, nombre, tipo, color) independientemente
     de si tienen transacciones asociadas o no.
     
@@ -114,8 +116,8 @@ async def get_all_available_categories(
     ```
     """
     logger.info(f"Obteniendo todas las categorías disponibles para user {current_user.email}, type={type}")
-    
-    categories = CategoryService.get_all_available_categories(db, category_type=type)
+
+    categories = CategoryService.get_all_available_categories(db, user_id=current_user.id, category_type=type)
     
     logger.info(f"Devolviendo {len(categories)} categorías disponibles")
     
@@ -176,8 +178,8 @@ async def create_category(
     _: bool = Depends(check_rate_limit)
 ):
     """
-    Crear nueva categoría (disponible globalmente)
-    
+    Crear nueva categoría para el usuario actual
+
     **Request Body:**
     ```json
     {
@@ -186,15 +188,15 @@ async def create_category(
       "color": "#3B82F6"
     }
     ```
-    
+
     **Response:** 201 Created con los datos de la categoría creada
-    
-    **Error:** 400 Bad Request si el nombre ya existe
+
+    **Error:** 400 Bad Request si el nombre ya existe para este usuario
     """
-    logger.info(f"Creando nueva categoría: {category_data.name}")
+    logger.info(f"Creando nueva categoría: {category_data.name} para user {current_user.email}")
     
     try:
-        category = CategoryService.create(db, category_data)
+        category = CategoryService.create(db, category_data, user_id=current_user.id)
         logger.info(f"Categoría creada exitosamente: {category.id}")
         return CategoryResponse.model_validate(category)
     except ValueError as e:
@@ -220,8 +222,8 @@ async def update_category(
     _: bool = Depends(check_rate_limit)
 ):
     """
-    Actualizar categoría existente
-    
+    Actualizar categoría existente (solo categorías propias del usuario)
+
     **Request Body (todos los campos son opcionales):**
     ```json
     {
@@ -271,15 +273,15 @@ async def delete_category(
     _: bool = Depends(check_rate_limit)
 ):
     """
-    Eliminar categoría
-    
+    Eliminar categoría (solo categorías propias del usuario, no las globales)
+
     **ℹ️ NOTA:** Las transacciones asociadas quedarán con category_id=NULL (SET NULL)
-    
+
     **Response:** 204 No Content si se eliminó correctamente
     """
     logger.info(f"Eliminando categoría {category_id} (user: {current_user.email})")
     
-    deleted = CategoryService.delete(db, category_id)
+    deleted = CategoryService.delete(db, category_id, user_id=current_user.id)
     if not deleted:
         logger.warning(f"Categoría no encontrada para eliminar: {category_id}")
         raise HTTPException(
