@@ -111,7 +111,10 @@ def verify_token(token: str) -> Optional[dict]:
         return None
     except Exception as e:
         logger.error(f"Error inesperado al verificar token: {e}")
-        return None(token: str) -> Optional[dict]:
+        return None
+
+
+def verify_refresh_token(token: str) -> Optional[dict]:
     """
     Verificar y decodificar un refresh token JWT
     
