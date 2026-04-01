@@ -68,7 +68,8 @@ app.add_middleware(
 if settings.ENVIRONMENT in ["pre", "production"]:
     app.add_middleware(
         TrustedHostMiddleware,
-        allowed_hosts=settings.ALLOWED_HOSTS
+        # Permitir hosts específicos según entorno (localhost para desarrollo, dominios reales para producción)
+        allowed_hosts=settings.ALLOWED_HOSTS 
     )
     logger.info(f"TrustedHostMiddleware habilitado para {settings.ENVIRONMENT}: {settings.ALLOWED_HOSTS}")
 

@@ -163,39 +163,45 @@ async def collect_user_financial_data(
 
 
 def get_initial_balance(db: Session, user_id: UUID, year: int, account_id: Optional[UUID] = None) -> float:
-    """Calcula el balance al final del año anterior."""
+    """Calcula el balance al final del año anterior.
+    Nota: Cálculos en Python porque amount está encriptado.
+    """
     end_of_previous_year = date(year - 1, 12, 31)
-    
+
     # Obtener cuentas del usuario
     accounts_query = db.query(Account).filter(Account.user_id == user_id)
     if account_id:
         accounts_query = accounts_query.filter(Account.id == account_id)
     accounts = accounts_query.all()
     account_ids = [acc.id for acc in accounts]
-    
+
     if not account_ids:
         return 0.0
-    
-    query = db.query(func.sum(Transaction.amount)).filter(
+
+    # Obtener transacciones hasta fin del año anterior
+    transactions = db.query(Transaction).filter(
         and_(
             Transaction.account_id.in_(account_ids),
             Transaction.date <= end_of_previous_year
         )
-    )
-    
-    total = query.scalar()
-    return float(total) if total else 0.0
+    ).all()
+
+    # Sumar en Python (amount se desencripta automáticamente)
+    total = sum([float(t.amount) if t.amount else 0.0 for t in transactions])
+    return total
 
 
 def calculate_annual_summary(db: Session, user_id: UUID, year: int, account_id: Optional[UUID] = None) -> Dict:
-    """Calcula el resumen anual."""
+    """Calcula el resumen anual.
+    Nota: Cálculos en Python porque amount está encriptado.
+    """
     # Obtener cuentas del usuario
     accounts_query = db.query(Account).filter(Account.user_id == user_id)
     if account_id:
         accounts_query = accounts_query.filter(Account.id == account_id)
     accounts = accounts_query.all()
     account_ids = [acc.id for acc in accounts]
-    
+
     if not account_ids:
         return {
             'total_income': 0.0,
@@ -206,94 +212,81 @@ def calculate_annual_summary(db: Session, user_id: UUID, year: int, account_id: 
             'balance_change': 0.0,
             'balance_change_percent': 0.0
         }
-    
-    # Total ingresos
-    total_income = db.query(func.sum(Transaction.amount)).filter(
-        and_(
-            Transaction.account_id.in_(account_ids),
-            extract('year', Transaction.date) == year,
-            Transaction.type == 'income'
-        )
-    ).scalar() or 0
-    
-    # Total gastos
-    total_expenses = db.query(func.sum(Transaction.amount)).filter(
-        and_(
-            Transaction.account_id.in_(account_ids),
-            extract('year', Transaction.date) == year,
-            Transaction.type == 'expense'
-        )
-    ).scalar() or 0
-    
-    # Meses con datos
-    months_with_data = db.query(func.count(func.distinct(extract('month', Transaction.date)))).filter(
+
+    # Obtener todas las transacciones del año
+    transactions = db.query(Transaction).filter(
         and_(
             Transaction.account_id.in_(account_ids),
             extract('year', Transaction.date) == year
         )
-    ).scalar() or 0
-    
-    net_balance = float(total_income) - abs(float(total_expenses))
-    avg_savings_rate = (net_balance / float(total_income) * 100) if total_income > 0 else 0
-    
+    ).all()
+
+    # Calcular totales en Python
+    total_income = sum([float(t.amount) if t.amount else 0.0 for t in transactions if t.type == 'income'])
+    total_expenses = sum([abs(float(t.amount)) if t.amount else 0.0 for t in transactions if t.type == 'expense'])
+
+    # Meses con datos
+    months_set = set([t.date.month for t in transactions])
+    months_with_data = len(months_set)
+
+    net_balance = total_income - total_expenses
+    avg_savings_rate = (net_balance / total_income * 100) if total_income > 0 else 0
+
     return {
-        'total_income': float(total_income),
-        'total_expenses': abs(float(total_expenses)),
+        'total_income': total_income,
+        'total_expenses': total_expenses,
         'net_balance': net_balance,
         'avg_savings_rate': avg_savings_rate,
         'months_with_data': months_with_data,
         'balance_change': net_balance,
-        'balance_change_percent': (net_balance / float(total_income) * 100) if total_income > 0 else 0
+        'balance_change_percent': (net_balance / total_income * 100) if total_income > 0 else 0
     }
 
 
 def calculate_monthly_breakdown(db: Session, user_id: UUID, year: int, account_id: Optional[UUID] = None) -> List[Dict]:
-    """Calcula el desglose mensual."""
+    """Calcula el desglose mensual.
+    Nota: Cálculos en Python porque amount está encriptado.
+    """
     # Obtener cuentas del usuario
     accounts_query = db.query(Account).filter(Account.user_id == user_id)
     if account_id:
         accounts_query = accounts_query.filter(Account.id == account_id)
     accounts = accounts_query.all()
     account_ids = [acc.id for acc in accounts]
-    
+
+    if not account_ids:
+        return [
+            {'month': m, 'income': 0.0, 'expenses': 0.0, 'balance': 0.0, 'savings_rate': 0.0}
+            for m in range(1, 13)
+        ]
+
+    # Obtener todas las transacciones del año
+    transactions = db.query(Transaction).filter(
+        and_(
+            Transaction.account_id.in_(account_ids),
+            extract('year', Transaction.date) == year
+        )
+    ).all()
+
+    # Agrupar por mes en Python
+    income_by_month = {m: 0.0 for m in range(1, 13)}
+    expense_by_month = {m: 0.0 for m in range(1, 13)}
+
+    for t in transactions:
+        month = t.date.month
+        amount = float(t.amount) if t.amount else 0.0
+        if t.type == 'income':
+            income_by_month[month] += amount
+        elif t.type == 'expense':
+            expense_by_month[month] += abs(amount)
+
     monthly_data = []
-    
     for month in range(1, 13):
-        if not account_ids:
-            monthly_data.append({
-                'month': month,
-                'income': 0.0,
-                'expenses': 0.0,
-                'balance': 0.0,
-                'savings_rate': 0.0
-            })
-            continue
-        
-        # Ingresos del mes
-        income = db.query(func.sum(Transaction.amount)).filter(
-            and_(
-                Transaction.account_id.in_(account_ids),
-                extract('year', Transaction.date) == year,
-                extract('month', Transaction.date) == month,
-                Transaction.type == 'income'
-            )
-        ).scalar() or 0
-        
-        # Gastos del mes
-        expenses = db.query(func.sum(Transaction.amount)).filter(
-            and_(
-                Transaction.account_id.in_(account_ids),
-                extract('year', Transaction.date) == year,
-                extract('month', Transaction.date) == month,
-                Transaction.type == 'expense'
-            )
-        ).scalar() or 0
-        
-        income_val = float(income)
-        expenses_val = abs(float(expenses))
+        income_val = income_by_month[month]
+        expenses_val = expense_by_month[month]
         balance = income_val - expenses_val
         savings_rate = (balance / income_val * 100) if income_val > 0 else 0
-        
+
         monthly_data.append({
             'month': month,
             'income': income_val,
@@ -301,48 +294,57 @@ def calculate_monthly_breakdown(db: Session, user_id: UUID, year: int, account_i
             'balance': balance,
             'savings_rate': savings_rate
         })
-    
+
     return monthly_data
 
 
 def get_top_categories(db: Session, user_id: UUID, year: int, account_id: Optional[UUID] = None) -> Dict:
-    """Obtiene las categorías principales."""
+    """Obtiene las categorías principales.
+    Nota: Cálculos en Python porque amount está encriptado.
+    """
     # Obtener cuentas del usuario
     accounts_query = db.query(Account).filter(Account.user_id == user_id)
     if account_id:
         accounts_query = accounts_query.filter(Account.id == account_id)
     accounts = accounts_query.all()
     account_ids = [acc.id for acc in accounts]
-    
+
     if not account_ids:
         return {'expenses': []}
-    
-    # Top gastos
-    expenses_query = db.query(
-        Category.name,
-        func.sum(Transaction.amount).label('total')
-    ).join(
-        Transaction, Transaction.category_id == Category.id
+
+    # Obtener transacciones de gastos del año
+    transactions = db.query(Transaction).join(
+        Category, Transaction.category_id == Category.id
     ).filter(
         and_(
             Transaction.account_id.in_(account_ids),
             extract('year', Transaction.date) == year,
             Transaction.type == 'expense'
         )
-    ).group_by(Category.name).order_by(func.sum(Transaction.amount).desc()).limit(5)
-    
-    expenses_results = expenses_query.all()
-    total_expenses = sum([abs(float(r.total)) for r in expenses_results])
-    
+    ).all()
+
+    # Agrupar por categoría en Python
+    category_totals = {}
+    for t in transactions:
+        cat_name = t.category.name if t.category else "Sin categoría"
+        if cat_name not in category_totals:
+            category_totals[cat_name] = 0.0
+        amount = float(t.amount) if t.amount else 0.0
+        category_totals[cat_name] += abs(amount)
+
+    # Ordenar y tomar top 5
+    sorted_categories = sorted(category_totals.items(), key=lambda x: x[1], reverse=True)[:5]
+    total_expenses = sum([v for _, v in sorted_categories])
+
     expenses_categories = [
         {
-            'category': r.name,
-            'total': abs(float(r.total)),
-            'percentage': (abs(float(r.total)) / total_expenses * 100) if total_expenses > 0 else 0
+            'category': name,
+            'total': total,
+            'percentage': (total / total_expenses * 100) if total_expenses > 0 else 0
         }
-        for r in expenses_results
+        for name, total in sorted_categories
     ]
-    
+
     return {
         'expenses': expenses_categories
     }

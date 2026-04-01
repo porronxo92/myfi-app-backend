@@ -190,20 +190,21 @@ def suggest_budget_from_history(
 ) -> SuggestedBudget:
     """
     Sugiere un presupuesto basado en el histórico de gastos del usuario
-    
+    Nota: Cálculos en Python porque amount está encriptado.
+
     Args:
         db: Sesión de base de datos
         user_id: ID del usuario
         target_month: Mes para el que se sugiere el presupuesto
         target_year: Año para el que se sugiere el presupuesto
         months_back: Número de meses hacia atrás a analizar
-        
+
     Returns:
         SuggestedBudget con partidas sugeridas
     """
     from datetime import date, timedelta
     from calendar import monthrange
-    
+
     # Calcular el rango de fechas a analizar
     # Último día del mes anterior al target
     if target_month == 1:
@@ -212,28 +213,22 @@ def suggest_budget_from_history(
     else:
         prev_month = target_month - 1
         prev_year = target_year
-    
+
     _, last_day = monthrange(prev_year, prev_month)
     end_date = date(prev_year, prev_month, last_day)
-    
+
     # Calcular inicio basado en months_back
     start_year = target_year
     start_month = target_month - months_back
     while start_month <= 0:
         start_month += 12
         start_year -= 1
-    
+
     start_date = date(start_year, start_month, 1)
-    
-    # Obtener todas las categorías de gasto usadas por el usuario
-    # JOIN con Account para filtrar por user_id
+
+    # Obtener transacciones de gastos del usuario en el período
     from app.models.account import Account
-    categories_with_spending = db.query(
-        Transaction.category_id,
-        Category.name,
-        sql_func.avg(Transaction.amount).label('avg_amount'),
-        sql_func.sum(Transaction.amount).label('total_amount')
-    ).join(
+    transactions = db.query(Transaction).join(
         Category, Transaction.category_id == Category.id
     ).join(
         Account, Transaction.account_id == Account.id
@@ -244,34 +239,46 @@ def suggest_budget_from_history(
             Transaction.date >= start_date,
             Transaction.date <= end_date
         )
-    ).group_by(
-        Transaction.category_id,
-        Category.name
     ).all()
-    
+
+    # Agrupar por categoría en Python
+    category_totals = {}
+    for t in transactions:
+        cat_id = t.category_id
+        if cat_id not in category_totals:
+            category_totals[cat_id] = {
+                "name": t.category.name if t.category else "Sin categoría",
+                "amounts": []
+            }
+        # amount se desencripta automáticamente
+        amount = float(t.amount) if t.amount else 0.0
+        category_totals[cat_id]["amounts"].append(abs(amount))
+
     suggested_items = []
     total_suggested = Decimal(0)
-    
-    for cat_id, cat_name, avg_amount, total_amount in categories_with_spending:
-        # Calcular promedio mensual
+
+    for cat_id, data in category_totals.items():
+        # Calcular promedio
+        amounts = data["amounts"]
+        avg_amount = sum(amounts) / len(amounts) if amounts else 0.0
         suggested_amount = Decimal(str(abs(avg_amount)))
-        
+
         suggested_items.append(SuggestedBudgetItem(
             category_id=cat_id,
-            category_name=cat_name,
+            category_name=data["name"],
             suggested_amount=suggested_amount,
             based_on_average=suggested_amount,
             months_analyzed=months_back
         ))
-        
+
         total_suggested += suggested_amount
-    
+
     # Ordenar por monto sugerido (mayor a menor)
     suggested_items.sort(key=lambda x: x.suggested_amount, reverse=True)
-    
+
     month_names = ["", "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
                    "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"]
-    
+
     return SuggestedBudget(
         suggested_for_month=target_month,
         suggested_for_year=target_year,

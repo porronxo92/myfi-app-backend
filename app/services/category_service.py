@@ -65,25 +65,29 @@ class CategoryService:
     def _calculate_total_amount(db: Session, category_id: UUID, user_id: UUID) -> float:
         """
         Calcula el monto total de transacciones de una categoría para un usuario
-        
+        Nota: Cálculos en Python porque amount está encriptado.
+
         Args:
             db: Sesión de base de datos
             category_id: UUID de la categoría
             user_id: UUID del usuario
-        
+
         Returns:
             Total amount (suma de todas las transacciones del usuario)
         """
         from app.models.transaction import Transaction
-        
-        result = db.query(func.sum(Transaction.amount)).join(
+
+        transactions = db.query(Transaction).join(
             Account, Transaction.account_id == Account.id
         ).filter(
             Transaction.category_id == category_id,
             Account.user_id == user_id
-        ).scalar()
-        
-        return float(result) if result else 0.0
+        ).all()
+
+        # Sumar en Python (amount se desencripta automáticamente)
+        total = sum([float(t.amount) if t.amount else 0.0 for t in transactions])
+
+        return total
     
     @staticmethod
     def get_by_id(db: Session, category_id: UUID, user_id: UUID) -> Optional[Category]:

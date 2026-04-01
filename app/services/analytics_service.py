@@ -271,60 +271,70 @@ class AnalyticsService:
         }
     
     async def get_top_merchants(
-        self, 
-        user_id: UUID, 
+        self,
+        user_id: UUID,
         limit: int = 10,
         period: str = 'current_month'
     ) -> List[Dict[str, Any]]:
         """
         Obtiene los principales comercios/conceptos por volumen de gasto.
-        
+
         Args:
             user_id: ID del usuario
             limit: Número máximo de resultados
             period: Período a analizar
-        
+
         Returns:
             Lista de comercios ordenados por gasto total
+
+        Nota: Los cálculos se hacen en Python porque amount está encriptado.
         """
         start_date, end_date = self.mcp._parse_period(period)
-        
+
         # Obtener cuentas del usuario
         accounts = self.db.query(Account).filter(
             Account.user_id == user_id,
             Account.is_active == True
         ).all()
-        
+
         account_ids = [acc.id for acc in accounts]
-        
-        # Query para agrupar por descripción (merchant)
-        top_merchants = self.db.query(
-            Transaction.description,
-            Category.name.label('category_name'),
-            func.count(Transaction.id).label('count'),
-            func.sum(func.abs(Transaction.amount)).label('total')
-        ).outerjoin(
+
+        if not account_ids:
+            return []
+
+        # Obtener transacciones de gastos del período
+        transactions = self.db.query(Transaction).outerjoin(
             Category, Transaction.category_id == Category.id
         ).filter(
             Transaction.account_id.in_(account_ids),
             Transaction.date >= start_date.date(),
             Transaction.date <= end_date.date(),
             Transaction.type == 'expense'
-        ).group_by(
-            Transaction.description, Category.name
-        ).order_by(
-            desc('total')
-        ).limit(limit).all()
-        
-        result = []
-        for merchant in top_merchants:
-            result.append({
-                "merchant": merchant.description,
-                "category": merchant.category_name or "Sin categoría",
-                "num_transactions": merchant.count,
-                "total_spent": float(merchant.total)
-            })
-        
+        ).all()
+
+        # Agrupar por descripción (merchant) en Python
+        merchant_totals = {}
+        for t in transactions:
+            key = t.description or "Sin descripción"
+            if key not in merchant_totals:
+                merchant_totals[key] = {
+                    "merchant": key,
+                    "category": t.category.name if t.category else "Sin categoría",
+                    "num_transactions": 0,
+                    "total_spent": 0.0
+                }
+            merchant_totals[key]["num_transactions"] += 1
+            # amount se desencripta automáticamente por el TypeDecorator
+            amount = float(t.amount) if t.amount else 0.0
+            merchant_totals[key]["total_spent"] += abs(amount)
+
+        # Ordenar por total y limitar
+        result = sorted(
+            merchant_totals.values(),
+            key=lambda x: x["total_spent"],
+            reverse=True
+        )[:limit]
+
         return result
     
     async def get_recurring_expenses(self, user_id: UUID) -> RecurringExpensesResponse:
@@ -656,28 +666,29 @@ class AnalyticsService:
     ) -> Dict[str, Any]:
         """
         Suma total de ingresos del año hasta la fecha.
+        Nota: Cálculos en Python porque amount está encriptado.
         """
         from datetime import date
-        
+
         start_of_year = date(year, 1, 1)
         end_of_year = date(year, 12, 31)
         today = date.today()
         last_date = min(today, end_of_year)
-        
+
         # Filtrar cuentas
         accounts_query = self.db.query(Account).filter(
             Account.user_id == user_id,
             Account.is_active == True
         )
-        
+
         if account_id:
             from uuid import UUID as UUIDType
             account_uuid = UUIDType(account_id) if isinstance(account_id, str) else account_id
             accounts_query = accounts_query.filter(Account.id == account_uuid)
-        
+
         accounts = accounts_query.all()
         account_ids = [acc.id for acc in accounts]
-        
+
         if not account_ids:
             return {
                 "year": year,
@@ -688,40 +699,38 @@ class AnalyticsService:
                 "breakdown_by_month": [],
                 "currency": "EUR"
             }
-        
-        # Calcular ingresos totales
-        total_income = self.db.query(func.sum(Transaction.amount)).filter(
+
+        # Obtener todas las transacciones de ingresos del año
+        transactions = self.db.query(Transaction).filter(
             Transaction.account_id.in_(account_ids),
             Transaction.date >= start_of_year,
             Transaction.date <= last_date,
             Transaction.type == 'income'
-        ).scalar() or Decimal('0.00')
-        
-        # Obtener desglose por mes
-        monthly_data = self.db.query(
-            extract('month', Transaction.date).label('month'),
-            func.sum(Transaction.amount).label('income')
-        ).filter(
-            Transaction.account_id.in_(account_ids),
-            Transaction.date >= start_of_year,
-            Transaction.date <= last_date,
-            Transaction.type == 'income'
-        ).group_by(
-            extract('month', Transaction.date)
         ).all()
-        
+
+        # Calcular totales en Python (amount se desencripta automáticamente)
+        total_income = sum([float(t.amount) if t.amount else 0.0 for t in transactions])
+
+        # Agrupar por mes
+        monthly_totals = {}
+        for t in transactions:
+            month = t.date.month
+            if month not in monthly_totals:
+                monthly_totals[month] = 0.0
+            monthly_totals[month] += float(t.amount) if t.amount else 0.0
+
         breakdown = [
-            {"month": int(m.month), "income": float(m.income)}
-            for m in monthly_data
+            {"month": m, "income": round(total, 2)}
+            for m, total in sorted(monthly_totals.items())
         ]
-        
+
         months_with_data = len(breakdown)
-        monthly_average = float(total_income) / months_with_data if months_with_data > 0 else 0.0
-        
+        monthly_average = total_income / months_with_data if months_with_data > 0 else 0.0
+
         return {
             "year": year,
             "account_id": account_id,
-            "total_income": float(total_income),
+            "total_income": round(total_income, 2),
             "months_with_data": months_with_data,
             "monthly_average": round(monthly_average, 2),
             "breakdown_by_month": breakdown,
@@ -736,28 +745,29 @@ class AnalyticsService:
     ) -> Dict[str, Any]:
         """
         Suma total de gastos del año hasta la fecha.
+        Nota: Cálculos en Python porque amount está encriptado.
         """
         from datetime import date
-        
+
         start_of_year = date(year, 1, 1)
         end_of_year = date(year, 12, 31)
         today = date.today()
         last_date = min(today, end_of_year)
-        
+
         # Filtrar cuentas
         accounts_query = self.db.query(Account).filter(
             Account.user_id == user_id,
             Account.is_active == True
         )
-        
+
         if account_id:
             from uuid import UUID as UUIDType
             account_uuid = UUIDType(account_id) if isinstance(account_id, str) else account_id
             accounts_query = accounts_query.filter(Account.id == account_uuid)
-        
+
         accounts = accounts_query.all()
         account_ids = [acc.id for acc in accounts]
-        
+
         if not account_ids:
             return {
                 "year": year,
@@ -768,40 +778,38 @@ class AnalyticsService:
                 "breakdown_by_month": [],
                 "currency": "EUR"
             }
-        
-        # Calcular gastos totales (valor absoluto)
-        total_expenses = self.db.query(func.sum(func.abs(Transaction.amount))).filter(
+
+        # Obtener todas las transacciones de gastos del año
+        transactions = self.db.query(Transaction).filter(
             Transaction.account_id.in_(account_ids),
             Transaction.date >= start_of_year,
             Transaction.date <= last_date,
             Transaction.type == 'expense'
-        ).scalar() or Decimal('0.00')
-        
-        # Obtener desglose por mes
-        monthly_data = self.db.query(
-            extract('month', Transaction.date).label('month'),
-            func.sum(func.abs(Transaction.amount)).label('expenses')
-        ).filter(
-            Transaction.account_id.in_(account_ids),
-            Transaction.date >= start_of_year,
-            Transaction.date <= last_date,
-            Transaction.type == 'expense'
-        ).group_by(
-            extract('month', Transaction.date)
         ).all()
-        
+
+        # Calcular totales en Python (amount se desencripta automáticamente)
+        total_expenses = sum([abs(float(t.amount)) if t.amount else 0.0 for t in transactions])
+
+        # Agrupar por mes
+        monthly_totals = {}
+        for t in transactions:
+            month = t.date.month
+            if month not in monthly_totals:
+                monthly_totals[month] = 0.0
+            monthly_totals[month] += abs(float(t.amount)) if t.amount else 0.0
+
         breakdown = [
-            {"month": int(m.month), "expenses": float(m.expenses)}
-            for m in monthly_data
+            {"month": m, "expenses": round(total, 2)}
+            for m, total in sorted(monthly_totals.items())
         ]
-        
+
         months_with_data = len(breakdown)
-        monthly_average = float(total_expenses) / months_with_data if months_with_data > 0 else 0.0
-        
+        monthly_average = total_expenses / months_with_data if months_with_data > 0 else 0.0
+
         return {
             "year": year,
             "account_id": account_id,
-            "total_expenses": float(total_expenses),
+            "total_expenses": round(total_expenses, 2),
             "months_with_data": months_with_data,
             "monthly_average": round(monthly_average, 2),
             "breakdown_by_month": breakdown,
@@ -817,7 +825,8 @@ class AnalyticsService:
     ) -> Dict[str, Any]:
         """
         Obtiene desglose de ingresos y gastos por categoría para un mes específico.
-        
+        Nota: Cálculos en Python porque amount está encriptado.
+
         Returns:
             Dict con estructura:
             {
@@ -828,90 +837,89 @@ class AnalyticsService:
         """
         from datetime import date
         from uuid import UUID as UUIDType
-        
+
         # Construir rango de fechas del mes
         start_of_month = date(year, month, 1)
         if month == 12:
             end_of_month = date(year + 1, 1, 1)
         else:
             end_of_month = date(year, month + 1, 1)
-        
+
         # Filtrar cuentas
         accounts_query = self.db.query(Account).filter(
             Account.user_id == user_id,
             Account.is_active == True
         )
-        
+
         if account_id:
             account_uuid = UUIDType(account_id) if isinstance(account_id, str) else account_id
             accounts_query = accounts_query.filter(Account.id == account_uuid)
-        
+
         accounts = accounts_query.all()
         account_ids = [acc.id for acc in accounts]
-        
+
         if not account_ids:
             return {
                 "income": {"categories": [], "total": 0.0},
                 "expenses": {"categories": [], "total": 0.0},
                 "period": {"year": year, "month": month}
             }
-        
-        # Query para ingresos por categoría
-        income_data = self.db.query(
-            Category.name.label('category'),
-            Category.color,
-            func.sum(Transaction.amount).label('total'),
-            func.count(Transaction.id).label('count')
-        ).join(
-            Transaction, Transaction.category_id == Category.id
+
+        # Obtener todas las transacciones del mes
+        transactions = self.db.query(Transaction).outerjoin(
+            Category, Transaction.category_id == Category.id
         ).filter(
             Transaction.account_id.in_(account_ids),
             Transaction.date >= start_of_month,
-            Transaction.date < end_of_month,
-            Transaction.type == 'income'
-        ).group_by(Category.name, Category.color).all()
-        
-        # Query para gastos por categoría
-        expense_data = self.db.query(
-            Category.name.label('category'),
-            Category.color,
-            func.sum(func.abs(Transaction.amount)).label('total'),
-            func.count(Transaction.id).label('count')
-        ).join(
-            Transaction, Transaction.category_id == Category.id
-        ).filter(
-            Transaction.account_id.in_(account_ids),
-            Transaction.date >= start_of_month,
-            Transaction.date < end_of_month,
-            Transaction.type == 'expense'
-        ).group_by(Category.name, Category.color).all()
-        
+            Transaction.date < end_of_month
+        ).all()
+
+        # Agrupar por categoría y tipo en Python
+        income_by_category = {}
+        expense_by_category = {}
+
+        for t in transactions:
+            amount = float(t.amount) if t.amount else 0.0
+            cat_name = t.category.name if t.category else "Sin categoría"
+            cat_color = t.category.color if t.category else None
+
+            if t.type == 'income':
+                if cat_name not in income_by_category:
+                    income_by_category[cat_name] = {"total": 0.0, "count": 0, "color": cat_color}
+                income_by_category[cat_name]["total"] += amount
+                income_by_category[cat_name]["count"] += 1
+            elif t.type == 'expense':
+                if cat_name not in expense_by_category:
+                    expense_by_category[cat_name] = {"total": 0.0, "count": 0, "color": cat_color}
+                expense_by_category[cat_name]["total"] += abs(amount)
+                expense_by_category[cat_name]["count"] += 1
+
         # Procesar ingresos
-        income_total = sum([float(row.total) for row in income_data])
+        income_total = sum([v["total"] for v in income_by_category.values()])
         income_categories = [
             {
-                "category": row.category,
-                "total": round(float(row.total), 2),
-                "percentage": round((float(row.total) / income_total * 100), 2) if income_total > 0 else 0,
-                "color": row.color or self._generate_green_color(i, len(income_data)),
-                "count": row.count
+                "category": name,
+                "total": round(data["total"], 2),
+                "percentage": round((data["total"] / income_total * 100), 2) if income_total > 0 else 0,
+                "color": data["color"] or self._generate_green_color(i, len(income_by_category)),
+                "count": data["count"]
             }
-            for i, row in enumerate(income_data)
+            for i, (name, data) in enumerate(income_by_category.items())
         ]
-        
+
         # Procesar gastos
-        expense_total = sum([float(row.total) for row in expense_data])
+        expense_total = sum([v["total"] for v in expense_by_category.values()])
         expense_categories = [
             {
-                "category": row.category,
-                "total": round(float(row.total), 2),
-                "percentage": round((float(row.total) / expense_total * 100), 2) if expense_total > 0 else 0,
-                "color": row.color or self._generate_red_color(i, len(expense_data)),
-                "count": row.count
+                "category": name,
+                "total": round(data["total"], 2),
+                "percentage": round((data["total"] / expense_total * 100), 2) if expense_total > 0 else 0,
+                "color": data["color"] or self._generate_red_color(i, len(expense_by_category)),
+                "count": data["count"]
             }
-            for i, row in enumerate(expense_data)
+            for i, (name, data) in enumerate(expense_by_category.items())
         ]
-        
+
         return {
             "income": {
                 "categories": income_categories,
@@ -935,69 +943,68 @@ class AnalyticsService:
     ) -> list:
         """
         Obtiene tendencia mensual de ingresos y gastos para todo el año.
-        
+        Nota: Cálculos en Python porque amount está encriptado.
+
         Returns:
             Lista de 12 elementos (uno por mes) con income y expenses
         """
         from datetime import date
         from uuid import UUID as UUIDType
-        
+
         # Filtrar cuentas
         accounts_query = self.db.query(Account).filter(
             Account.user_id == user_id,
             Account.is_active == True
         )
-        
+
         if account_id:
             account_uuid = UUIDType(account_id) if isinstance(account_id, str) else account_id
             accounts_query = accounts_query.filter(Account.id == account_uuid)
-        
+
         accounts = accounts_query.all()
         account_ids = [acc.id for acc in accounts]
-        
+
         if not account_ids:
             return self._empty_monthly_trend()
-        
-        # Query para ingresos por mes
-        income_by_month = self.db.query(
-            extract('month', Transaction.date).label('month'),
-            func.sum(Transaction.amount).label('total')
-        ).filter(
+
+        # Obtener todas las transacciones del año
+        start_of_year = date(year, 1, 1)
+        end_of_year = date(year, 12, 31)
+
+        transactions = self.db.query(Transaction).filter(
             Transaction.account_id.in_(account_ids),
-            extract('year', Transaction.date) == year,
-            Transaction.type == 'income'
-        ).group_by(extract('month', Transaction.date)).all()
-        
-        # Query para gastos por mes
-        expense_by_month = self.db.query(
-            extract('month', Transaction.date).label('month'),
-            func.sum(func.abs(Transaction.amount)).label('total')
-        ).filter(
-            Transaction.account_id.in_(account_ids),
-            extract('year', Transaction.date) == year,
-            Transaction.type == 'expense'
-        ).group_by(extract('month', Transaction.date)).all()
-        
-        # Convertir a diccionarios
-        income_dict = {int(row.month): float(row.total) for row in income_by_month}
-        expense_dict = {int(row.month): float(row.total) for row in expense_by_month}
-        
+            Transaction.date >= start_of_year,
+            Transaction.date <= end_of_year
+        ).all()
+
+        # Agrupar por mes y tipo en Python
+        income_by_month = {i: 0.0 for i in range(1, 13)}
+        expense_by_month = {i: 0.0 for i in range(1, 13)}
+
+        for t in transactions:
+            month = t.date.month
+            amount = float(t.amount) if t.amount else 0.0
+            if t.type == 'income':
+                income_by_month[month] += amount
+            elif t.type == 'expense':
+                expense_by_month[month] += abs(amount)
+
         # Nombres de meses en español
         month_names = [
             "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
             "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"
         ]
-        
+
         # Construir array de 12 meses
         monthly_trend = []
         for month_num in range(1, 13):
             monthly_trend.append({
                 "month": month_num,
                 "month_name": month_names[month_num - 1],
-                "income": round(income_dict.get(month_num, 0.0), 2),
-                "expenses": round(expense_dict.get(month_num, 0.0), 2)
+                "income": round(income_by_month[month_num], 2),
+                "expenses": round(expense_by_month[month_num], 2)
             })
-        
+
         return monthly_trend
 
     def _generate_green_color(self, index: int, total: int) -> str:

@@ -93,10 +93,11 @@ class BudgetItem(Base):
     def calculate_spent_amount(self, db):
         """
         Calcular cuánto se ha gastado realmente en esta categoría durante el mes del presupuesto
-        
+        Nota: Cálculos en Python porque amount está encriptado.
+
         Args:
             db: Sesión de base de datos
-            
+
         Returns:
             Decimal: Monto total gastado
         """
@@ -104,10 +105,9 @@ class BudgetItem(Base):
         from app.models.account import Account
         from sqlalchemy import extract, and_
         from decimal import Decimal
-        
+
         # Obtener transacciones de la categoría en el mes/año del presupuesto
-        # JOIN con Account para filtrar por user_id
-        spent = db.query(sql_func.coalesce(sql_func.sum(Transaction.amount), 0)).join(
+        transactions = db.query(Transaction).join(
             Account, Transaction.account_id == Account.id
         ).filter(
             and_(
@@ -115,11 +115,14 @@ class BudgetItem(Base):
                 Account.user_id == self.budget.user_id,
                 extract('month', Transaction.date) == self.budget.month,
                 extract('year', Transaction.date) == self.budget.year,
-                Transaction.type == 'expense'  # Solo gastos
+                Transaction.type == 'expense'
             )
-        ).scalar()
-        
-        return Decimal(spent) if spent else Decimal(0)
+        ).all()
+
+        # Sumar en Python (amount se desencripta automáticamente)
+        spent = sum([abs(float(t.amount)) if t.amount else 0.0 for t in transactions])
+
+        return Decimal(str(spent))
     
     def get_remaining_amount(self, db):
         """

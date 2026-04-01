@@ -91,12 +91,16 @@ class Category(Base):
         return len(self.transactions)
     
     def total_amount(self, db_session):
-        """Total gastado/ingresado en esta categoría"""
-        from sqlalchemy import func
-        result = db_session.query(
-            func.sum(Transaction.amount)
-        ).filter(
+        """Total gastado/ingresado en esta categoría.
+        Nota: Cálculos en Python porque amount está encriptado.
+        """
+        from app.models.transaction import Transaction
+
+        transactions = db_session.query(Transaction).filter(
             Transaction.category_id == self.id
-        ).scalar()
-        
-        return float(result) if result else 0.0
+        ).all()
+
+        # Sumar en Python (amount se desencripta automáticamente)
+        total = sum([float(t.amount) if t.amount else 0.0 for t in transactions])
+
+        return total
