@@ -6,7 +6,7 @@ Endpoints para insights cualitativos, recomendaciones personalizadas
 y análisis generados con Gemini AI.
 """
 
-from typing import Optional
+from typing import Optional, List
 from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query, Body
 from sqlalchemy.orm import Session
@@ -15,6 +15,7 @@ from app.database import get_db
 from app.models.user import User
 from app.utils.security import get_current_user, check_rate_limit, check_gemini_quota
 from app.services.insights_service import InsightsService
+from app.services.chat_service import ChatService
 from app.schemas.insights import (
     FinancialInsight,
     FinancialHealthResponse,
@@ -25,6 +26,7 @@ from app.schemas.insights import (
     CustomAnalysisRequest,
     CombinedAnalyticsInsightsResponse
 )
+from app.schemas.chat import ChatRequest, ChatResponse, ChatMessage
 
 router = APIRouter(prefix="/api/insights", tags=["insights"])
 
@@ -423,73 +425,79 @@ async def get_dashboard_data(
         )
 
 
-@router.post("/chat")
+@router.post("/chat", response_model=ChatResponse)
 async def chat_with_agent(
-    message: str = Body(..., embed=True, description="Mensaje del usuario"),
+    request: ChatRequest,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
     _: bool = Depends(check_rate_limit),
     __: User = Depends(check_gemini_quota)
 ):
     """
-    Endpoint de chat conversacional con el agente financiero.
-    
-    Permite al usuario hacer preguntas en lenguaje natural sobre sus finanzas
-    y recibir respuestas contextualizadas generadas por Gemini AI.
-    
-    **Ejemplos de preguntas:**
-    - "¿Cuánto gasté este mes?"
-    - "¿En qué categoría gasto más?"
-    - "¿He gastado más o menos que el mes pasado?"
-    - "¿Cuánto dinero tengo ahora?"
-    - "Dame consejos para ahorrar"
-    
+    Agente conversacional financiero con Gemini AI.
+
+    Permite al usuario conversar en lenguaje natural sobre sus finanzas.
+    El agente tiene acceso completo a los datos financieros del usuario y puede:
+    - Responder preguntas sobre cuentas, gastos, presupuestos, etc.
+    - Proponer acciones (crear transacciones, categorías) que requieren confirmación
+
     **Request body:**
     ```json
     {
-      "message": "¿Cuánto gasté en restaurantes este mes?"
+      "message": "¿Cuánto he gastado este mes en supermercado?",
+      "conversation_history": [
+        {"role": "user", "content": "Hola"},
+        {"role": "assistant", "content": "¡Hola! Soy MyFi..."}
+      ]
     }
     ```
-    
-    **Response:**
+
+    **Response (informativa):**
     ```json
     {
-      "response": "En enero 2026 gastaste €450 en restaurantes...",
-      "context_used": ["transactions", "categories"],
-      "suggested_questions": [
-        "¿Cómo puedo reducir mis gastos en restaurantes?",
-        "¿Cuánto gasté en restaurantes el mes pasado?"
-      ],
-      "timestamp": "2026-01-09T15:30:00Z"
+      "message": "Este mes has gastado 234,50€ en Supermercado...",
+      "proposed_action": null,
+      "suggested_questions": ["¿Cuáles son mis mayores gastos?", ...],
+      "timestamp": "2026-04-01T10:30:00Z"
     }
     ```
-    
-    El agente tiene acceso completo a tus datos financieros a través del
-    Model Context Protocol (MCP) y puede responder preguntas complejas
-    combinando información de múltiples fuentes.
+
+    **Response (con acción propuesta):**
+    ```json
+    {
+      "message": "Voy a registrar el gasto. Confirma antes de guardar.",
+      "proposed_action": {
+        "type": "create_transaction",
+        "description": "Crear gasto de -45€ en Mercadona",
+        "endpoint": "POST /api/transactions",
+        "data": { ... }
+      },
+      "suggested_questions": [],
+      "timestamp": "2026-04-01T10:30:00Z"
+    }
+    ```
+
+    **Flujo de confirmación:**
+    1. El agente propone una acción (proposed_action != null)
+    2. El frontend muestra un modal de confirmación al usuario
+    3. Si confirma, el frontend llama directamente al endpoint indicado
+    4. Si cancela, no se ejecuta nada
+
+    **Notas:**
+    - El historial de conversación debe mantenerse en el frontend (sesión)
+    - Cada llamada consume 1 petición del límite diario de Gemini
+    - El contexto financiero se carga automáticamente en cada mensaje
     """
     try:
-        user_id = current_user.id
-        insights_service = InsightsService(db)
-        
-        # Usar el método de análisis personalizado existente
-        analysis = await insights_service.custom_analysis(
-            user_id,
-            message,
-            context={"chat_mode": True}
+        chat_service = ChatService(db, current_user.id)
+
+        response = await chat_service.process_message(
+            message=request.message,
+            conversation_history=request.conversation_history
         )
-        
-        # Formatear respuesta para el chat
-        response = {
-            "response": analysis.answer,
-            "context_used": list(analysis.supporting_data.keys()) if analysis.supporting_data else [],
-            "suggested_questions": analysis.follow_up_questions,
-            "supporting_data": analysis.supporting_data,
-            "timestamp": "2026-01-09T15:30:00Z"
-        }
-        
+
         return response
-    
+
     except Exception as e:
         raise HTTPException(
             status_code=500,
