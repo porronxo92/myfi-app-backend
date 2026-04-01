@@ -9,5 +9,6 @@ from app.models.user import User
 from app.models.investment import Investment
 from app.models.budget import Budget
 from app.models.budget_item import BudgetItem
+from app.models.gemini_usage import GeminiUsage
 
-__all__ = ["Account", "Category", "Transaction", "User", "Investment", "Budget", "BudgetItem"]
+__all__ = ["Account", "Category", "Transaction", "User", "Investment", "Budget", "BudgetItem", "GeminiUsage"]

@@ -82,6 +82,55 @@ async def get_current_user_profile(
     return user
 
 
+@router.get("/me/gemini-quota")
+async def get_gemini_quota(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Obtiene la cuota de Gemini AI del usuario actual.
+
+    Retorna información sobre el uso de la API de Gemini:
+    - used: Peticiones usadas hoy
+    - remaining: Peticiones restantes hoy
+    - limit: Límite diario configurado
+    - reset_date: Fecha del próximo reset (mañana)
+    - percentage_used: Porcentaje de cuota usada
+
+    Response:
+    ```json
+    {
+      "used": 5,
+      "remaining": 15,
+      "limit": 20,
+      "reset_date": "2026-04-02",
+      "percentage_used": 25.0
+    }
+    ```
+
+    La cuota se restablece automáticamente cada día a medianoche.
+    """
+    from app.services.gemini_quota_service import GeminiQuotaService
+    from app.schemas.gemini_quota import GeminiQuotaResponse
+    from datetime import date, timedelta
+
+    logger.info(f"GET /api/users/me/gemini-quota - Usuario: {current_user.email}")
+
+    quota_service = GeminiQuotaService(db)
+    used, remaining, limit = quota_service.get_remaining(current_user.id)
+
+    tomorrow = date.today() + timedelta(days=1)
+    percentage = (used / limit * 100) if limit > 0 else 0
+
+    return GeminiQuotaResponse(
+        used=used,
+        remaining=remaining,
+        limit=limit,
+        reset_date=tomorrow,
+        percentage_used=round(percentage, 1)
+    )
+
+
 @router.put("/me", response_model=UserResponse)
 async def update_current_user_profile(
     profile_data: UpdateUserProfile,

@@ -11,7 +11,7 @@ from typing import Optional
 import logging
 
 from app.database import get_db
-from app.utils.security import get_current_user
+from app.utils.security import get_current_user, check_gemini_quota
 from app.models.user import User
 from app.services import health_service
 
@@ -24,7 +24,8 @@ async def generate_financial_health_report(
     year: int = Query(..., description="Año para analizar"),
     account_id: Optional[str] = Query(None, description="ID de cuenta específica (opcional)"),
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    _: User = Depends(check_gemini_quota)
 ):
     """
     Genera un informe de salud financiera completo usando Gemini AI.

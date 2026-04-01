@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.models.user import User
-from app.utils.security import get_current_user, check_rate_limit
+from app.utils.security import get_current_user, check_rate_limit, check_gemini_quota
 from app.services.insights_service import InsightsService
 from app.schemas.insights import (
     FinancialInsight,
@@ -39,7 +39,8 @@ async def generate_insights(
     ),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
-    _: bool = Depends(check_rate_limit)
+    _: bool = Depends(check_rate_limit),
+    __: User = Depends(check_gemini_quota)
 ):
     """
     Genera insights financieros personalizados usando Gemini AI.
@@ -88,7 +89,8 @@ async def generate_insights(
 async def get_financial_health(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
-    _: bool = Depends(check_rate_limit)
+    _: bool = Depends(check_rate_limit),
+    __: User = Depends(check_gemini_quota)
 ):
     """
     Analiza la salud financiera general del usuario.
@@ -131,7 +133,8 @@ async def get_financial_health(
 async def get_recommendations(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
-    _: bool = Depends(check_rate_limit)
+    _: bool = Depends(check_rate_limit),
+    __: User = Depends(check_gemini_quota)
 ):
     """
     Genera recomendaciones personalizadas para optimizar gastos y aumentar ahorros.
@@ -177,7 +180,8 @@ async def get_recommendations(
 async def get_monthly_outlook(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
-    _: bool = Depends(check_rate_limit)
+    _: bool = Depends(check_rate_limit),
+    __: User = Depends(check_gemini_quota)
 ):
     """
     Predice cómo cerrará el mes actual basándose en el comportamiento hasta la fecha.
@@ -233,7 +237,8 @@ async def create_savings_plan(
     ),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
-    _: bool = Depends(check_rate_limit)
+    _: bool = Depends(check_rate_limit),
+    __: User = Depends(check_gemini_quota)
 ):
     """
     Genera un plan de ahorro personalizado para alcanzar un objetivo financiero.
@@ -293,7 +298,8 @@ async def custom_analysis(
     request: CustomAnalysisRequest,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
-    _: bool = Depends(check_rate_limit)
+    _: bool = Depends(check_rate_limit),
+    __: User = Depends(check_gemini_quota)
 ):
     """
     Responde preguntas personalizadas del usuario sobre sus finanzas usando Gemini AI.
@@ -354,7 +360,8 @@ async def custom_analysis(
 async def get_dashboard_data(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
-    _: bool = Depends(check_rate_limit)
+    _: bool = Depends(check_rate_limit),
+    __: User = Depends(check_gemini_quota)
 ):
     """
     Endpoint optimizado para el dashboard principal.
@@ -421,7 +428,8 @@ async def chat_with_agent(
     message: str = Body(..., embed=True, description="Mensaje del usuario"),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
-    _: bool = Depends(check_rate_limit)
+    _: bool = Depends(check_rate_limit),
+    __: User = Depends(check_gemini_quota)
 ):
     """
     Endpoint de chat conversacional con el agente financiero.

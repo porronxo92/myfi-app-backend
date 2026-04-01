@@ -1,6 +1,6 @@
 from fastapi import APIRouter, UploadFile, File, HTTPException, Depends, Request, status
 from app.config import settings
-from app.utils.security import get_current_user, check_rate_limit
+from app.utils.security import get_current_user, check_rate_limit, check_gemini_quota
 from app.models import User
 from app.utils.logger import get_logger, upload_logger, log_exception
 import google.generativeai as genai
@@ -15,7 +15,7 @@ logger = get_logger("app.routes.upload")
 
 router = APIRouter(
     prefix="/api/upload",
-    dependencies=[Depends(get_current_user), Depends(check_rate_limit)]
+    dependencies=[Depends(get_current_user), Depends(check_rate_limit), Depends(check_gemini_quota)]
 )
 
 # Configurar Gemini

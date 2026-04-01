@@ -108,6 +108,9 @@ class Settings(BaseSettings):
     LOGIN_RATE_LIMIT_ATTEMPTS: int = 5
     LOGIN_RATE_LIMIT_WINDOW_MINUTES: int = 15
 
+    # Gemini API Quota (per user per day)
+    GEMINI_DAILY_LIMIT_PER_USER: int = 20
+
     @property
     def DATABASE_URL(self) -> str:
         """Selecciona la URL de base de datos según el entorno"""

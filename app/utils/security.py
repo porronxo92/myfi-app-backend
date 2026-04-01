@@ -225,11 +225,11 @@ def cleanup_old_entries(max_age_minutes: int = 10):
 def get_client_identifier(request: Request, api_key: str = None) -> str:
     """
     Genera un identificador único para el cliente basado en API Key o IP.
-    
+
     Args:
         request: Request de FastAPI
         api_key: API Key si está disponible
-        
+
     Returns:
         str: Hash del identificador del cliente
     """
@@ -240,6 +240,54 @@ def get_client_identifier(request: Request, api_key: str = None) -> str:
         ip = request.client.host
         user_agent = request.headers.get("user-agent", "unknown")
         identifier = f"ip:{ip}:{user_agent}"
-    
+
     # Generar hash para proteger información sensible
     return hashlib.sha256(identifier.encode()).hexdigest()[:16]
+
+
+def check_gemini_quota(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+) -> User:
+    """
+    Dependency que verifica y consume cuota de Gemini API por usuario.
+
+    Verifica que el usuario no haya excedido su límite diario de peticiones
+    a Gemini AI. Si tiene cuota disponible, incrementa el contador.
+
+    Args:
+        current_user: Usuario autenticado
+        db: Sesión de base de datos
+
+    Returns:
+        User: Usuario autenticado si tiene cuota disponible
+
+    Raises:
+        HTTPException 429: Si el usuario excedió su límite diario
+    """
+    from app.services.gemini_quota_service import GeminiQuotaService
+    from datetime import date, timedelta
+
+    quota_service = GeminiQuotaService(db)
+    has_quota, used, limit = quota_service.check_and_increment(current_user.id)
+
+    if not has_quota:
+        tomorrow = date.today() + timedelta(days=1)
+        security_logger.warning(
+            f"Cuota Gemini excedida para usuario {current_user.email}: "
+            f"{used}/{limit} peticiones"
+        )
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail={
+                "message": f"Has alcanzado tu límite diario de {limit} consultas a Gemini AI. "
+                          f"Tu cuota se restablecerá mañana.",
+                "used": used,
+                "limit": limit,
+                "reset_date": tomorrow.isoformat()
+            },
+            headers={"Retry-After": str(24 * 3600)}  # 24 horas
+        )
+
+    logger.debug(f"Gemini quota OK: {current_user.email} - {used}/{limit}")
+    return current_user
