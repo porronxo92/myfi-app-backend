@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.models.user import User
-from app.utils.security import get_current_user
+from app.utils.security import get_current_user, check_rate_limit
 from app.services.analytics_service import AnalyticsService
 from app.schemas.analytics import (
     MonthlySummaryResponse,
@@ -41,7 +41,8 @@ async def get_monthly_summary(
         description="UUID de cuenta para filtrar (opcional). Si no se proporciona, se analizan todas las cuentas"
     ),
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    _: bool = Depends(check_rate_limit)
 ):
     """
     Obtiene el resumen financiero del mes/periodo especificado.
@@ -86,7 +87,8 @@ async def get_category_breakdown(
         description="UUID de cuenta para filtrar (opcional)"
     ),
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    _: bool = Depends(check_rate_limit)
 ):
     """
     Obtiene el desglose de gastos o ingresos por categoría.
@@ -134,7 +136,8 @@ async def get_category_chart_data(
         description="ID de cuenta para filtrar (opcional)"
     ),
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    _: bool = Depends(check_rate_limit)
 ):
     """
     Obtiene datos formateados para Chart.js (pie chart de categorías).
@@ -177,7 +180,8 @@ async def get_spending_trends(
         description="Número de meses a analizar (3-24)"
     ),
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    _: bool = Depends(check_rate_limit)
 ):
     """
     Obtiene tendencias de ingresos/gastos/balance de los últimos N meses.
@@ -207,7 +211,8 @@ async def get_spending_trends(
 async def get_trends_chart_data(
     months: int = Query(6, ge=3, le=24),
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    _: bool = Depends(check_rate_limit)
 ):
     """
     Obtiene datos de tendencias formateados para Chart.js (line chart).
@@ -247,7 +252,8 @@ async def detect_anomalies(
         description="Umbral de desviación estándar (1.5-3.0)"
     ),
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    _: bool = Depends(check_rate_limit)
 ):
     """
     Detecta transacciones inusuales usando análisis estadístico (z-score).
@@ -281,7 +287,8 @@ async def detect_anomalies(
 @router.get("/recurring", response_model=RecurringExpensesResponse)
 async def get_recurring_expenses(
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    _: bool = Depends(check_rate_limit)
 ):
     """
     Identifica gastos recurrentes (suscripciones, facturas, etc.).
@@ -317,7 +324,8 @@ async def get_recurring_expenses(
 @router.get("/savings-potential", response_model=SavingsPotentialResponse)
 async def get_savings_potential(
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    _: bool = Depends(check_rate_limit)
 ):
     """
     Analiza oportunidades de ahorro comparando gastos actuales vs histórico.
@@ -358,7 +366,8 @@ async def compare_periods(
         description="Segundo periodo a comparar"
     ),
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    _: bool = Depends(check_rate_limit)
 ):
     """
     Compara dos periodos financieros lado a lado.
@@ -395,7 +404,8 @@ async def get_top_merchants(
     period: str = Query("current_month"),
     limit: int = Query(10, ge=5, le=20, description="Número de merchants a retornar"),
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    _: bool = Depends(check_rate_limit)
 ):
     """
     Obtiene los comercios/destinatarios donde más se ha gastado.
@@ -428,7 +438,8 @@ async def get_top_merchants(
 async def get_savings_rate(
     period: str = Query("current_month"),
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    _: bool = Depends(check_rate_limit)
 ):
     """
     Calcula la tasa de ahorro del periodo especificado.
@@ -477,7 +488,8 @@ async def get_savings_rate(
 @router.get("/available-years")
 async def get_available_years(
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    _: bool = Depends(check_rate_limit)
 ):
     """
     Devuelve los años en los que el usuario tiene transacciones.
@@ -526,7 +538,8 @@ async def get_annual_balance(
     year: int = Query(..., description="Año a consultar"),
     account_id: Optional[str] = Query(None, description="UUID de cuenta específica"),
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    _: bool = Depends(check_rate_limit)
 ):
     """
     Devuelve el balance inicial (1 enero) y balance actual del año.
@@ -548,7 +561,8 @@ async def get_annual_savings_rate(
     year: int = Query(..., description="Año a consultar"),
     account_id: Optional[str] = Query(None, description="UUID de cuenta específica"),
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    _: bool = Depends(check_rate_limit)
 ):
     """
     Calcula la tasa de ahorro anual.
@@ -571,7 +585,8 @@ async def get_annual_income(
     year: int = Query(..., description="Año a consultar"),
     account_id: Optional[str] = Query(None, description="UUID de cuenta específica"),
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    _: bool = Depends(check_rate_limit)
 ):
     """
     Suma total de ingresos del año hasta la fecha.
@@ -592,7 +607,8 @@ async def get_annual_expenses(
     year: int = Query(..., description="Año a consultar"),
     account_id: Optional[str] = Query(None, description="UUID de cuenta específica"),
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    _: bool = Depends(check_rate_limit)
 ):
     """
     Suma total de gastos del año hasta la fecha.
@@ -614,7 +630,8 @@ async def get_category_breakdown_by_month(
     month: int = Query(..., description="Mes a consultar (1-12)"),
     account_id: Optional[str] = Query(None, description="UUID de cuenta específica"),
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    _: bool = Depends(check_rate_limit)
 ):
     """
     Obtiene el desglose de ingresos y gastos por categoría para un año y mes específicos.
@@ -667,7 +684,8 @@ async def get_monthly_trend_by_year(
     year: int = Query(..., description="Año a consultar"),
     account_id: Optional[str] = Query(None, description="UUID de cuenta específica"),
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    _: bool = Depends(check_rate_limit)
 ):
     """
     Obtiene la tendencia mensual de ingresos y gastos para un año completo.

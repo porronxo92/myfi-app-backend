@@ -3,7 +3,8 @@ Utilidades para manejo de tokens JWT (Access y Refresh)
 """
 from datetime import datetime, timedelta, timezone
 from typing import Optional
-from jose import JWTError, jwt
+import jwt
+from jwt.exceptions import InvalidTokenError
 from uuid import UUID
 
 from app.config import settings
@@ -105,15 +106,12 @@ def verify_token(token: str) -> Optional[dict]:
         logger.info(f"✅ Access token válido para user_id: {user_id}")
         return payload
         
-    except JWTError as e:
+    except InvalidTokenError as e:
         logger.warning(f"❌ Error al verificar token JWT: {e}")
         return None
     except Exception as e:
         logger.error(f"Error inesperado al verificar token: {e}")
-        return None
-
-
-def verify_refresh_token(token: str) -> Optional[dict]:
+        return None(token: str) -> Optional[dict]:
     """
     Verificar y decodificar un refresh token JWT
     
@@ -139,7 +137,7 @@ def verify_refresh_token(token: str) -> Optional[dict]:
         logger.debug(f"Refresh token válido para user_id: {user_id}")
         return payload
         
-    except JWTError as e:
+    except InvalidTokenError as e:
         logger.warning(f"Error al verificar refresh token: {e}")
         return None
     except Exception as e:

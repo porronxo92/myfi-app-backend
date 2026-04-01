@@ -14,7 +14,7 @@ def get_logs_dir() -> Path:
         logs_dir = Path(settings.LOGS_DIR)
     except Exception:
         # Fallback para desarrollo local
-        logs_dir = Path(r"C:\Users\rcruzd\OneDrive - Indra\Documentos\Workspace VS\AppFinanzas\logsBackend")
+        logs_dir = Path.cwd() / "logs"
     
     # Crear directorio si no existe (solo si no estamos en Cloud Run y tenemos permisos)
     if os.environ.get("K_SERVICE") is None:  # K_SERVICE indica Cloud Run

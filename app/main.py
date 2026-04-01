@@ -1,4 +1,5 @@
-from fastapi import FastAPI, Request, Depends
+from fastapi import FastAPI, Request, Depends, HTTPException
+from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from app.config import settings
@@ -14,8 +15,8 @@ app = FastAPI(
     title="Finanzas Personal API",
     description="API para gestión de finanzas personales con ingesta inteligente",
     version="1.0.0",
-    docs_url="/docs",
-    redoc_url="/redoc"
+    docs_url="/docs" if settings.ENVIRONMENT == "development" else None,
+    redoc_url="/redoc" if settings.ENVIRONMENT == "development" else None,
 )
 
 
@@ -43,14 +44,23 @@ logger.info(f"Directorio de logs: {settings.LOGS_DIR}")
 logger.info(f"CORS Origins: {settings.CORS_ORIGINS}")
 logger.info("=" * 60)
 
+# Handler global: sanitiza detalles internos en respuestas 5xx
+@app.exception_handler(HTTPException)
+async def http_exception_handler(request: Request, exc: HTTPException):
+    if exc.status_code >= 500:
+        error_logger.error(f"HTTPException 5xx en {request.method} {request.url.path}: {exc.detail}")
+        return JSONResponse(status_code=exc.status_code, content={"detail": "Error interno del servidor"})
+    return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})
+
+
 # CORS Configuration (debe estar ANTES de otros middlewares)
 # CRÍTICO: allow_credentials=True permite enviar/recibir cookies HTTP-only
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.CORS_ORIGINS,
     allow_credentials=True,  # ← Permite cookies HTTP-only
-    allow_methods=["*"],      # Permitir todos los métodos HTTP
-    allow_headers=["*"],      # Permitir todos los headers
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type", "Accept", "X-Requested-With"],
     expose_headers=[
         "Set-Cookie",
         "Authorization",
@@ -107,9 +117,10 @@ async def log_requests(request: Request, call_next):
         
         # Añadir headers de seguridad
         response.headers["X-Content-Type-Options"] = "nosniff"
-        # Usar SAMEORIGIN en lugar de DENY para permitir CORS desde origins permitidos
         response.headers["X-Frame-Options"] = "SAMEORIGIN"
-        response.headers["X-XSS-Protection"] = "1; mode=block"
+        response.headers["Content-Security-Policy"] = (
+            "default-src 'self'; script-src 'self'; object-src 'none'; base-uri 'self'"
+        )
         # No usar Strict-Transport-Security en desarrollo (localhost)
         if settings.ENVIRONMENT in ["pre", "production"]:
             response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"

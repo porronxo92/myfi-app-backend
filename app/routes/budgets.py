@@ -760,25 +760,18 @@ async def update_budget_item(
     ```
     """
     try:
-        # Buscar el item
-        budget_item = db.query(BudgetItem).filter(BudgetItem.id == item_id).first()
-        
+        # Buscar el item verificando ownership en una única query atómica
+        budget_item = db.query(BudgetItem).join(
+            Budget, BudgetItem.budget_id == Budget.id
+        ).filter(
+            BudgetItem.id == item_id,
+            Budget.user_id == current_user.id
+        ).first()
+
         if not budget_item:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Item de presupuesto no encontrado"
-            )
-        
-        # Verificar que el presupuesto pertenece al usuario
-        budget = db.query(Budget).filter(
-            Budget.id == budget_item.budget_id,
-            Budget.user_id == current_user.id
-        ).first()
-        
-        if not budget:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="No tienes permiso para actualizar este item"
             )
         
         # Actualizar campos

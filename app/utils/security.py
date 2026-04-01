@@ -7,7 +7,7 @@ from app.utils.jwt import verify_token
 from app.database import get_db
 from app.models import User
 from typing import Dict, Optional
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import hashlib
 
 logger = get_logger("app.utils.security")
@@ -67,7 +67,7 @@ def get_current_user(
     # Verificar y decodificar el token
     payload = verify_token(token)
     if not payload:
-        logger.warning(f"❌ Token JWT inválido o expirado. Token (primeros 20 chars): {token[:20]}...")
+        logger.warning("❌ Token JWT inválido o expirado")
         security_logger.warning("Token JWT inválido o expirado")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -149,11 +149,11 @@ def check_rate_limit(request: Request) -> None:
     """
     # Identificador único: IP del cliente
     client_id = request.client.host
-    current_time = datetime.now()
-    
+    current_time = datetime.now(timezone.utc)
+
     # Limpiar entradas antiguas
     cleanup_old_entries()
-    
+
     # Inicializar si es la primera petición
     if client_id not in rate_limit_storage:
         rate_limit_storage[client_id] = {
@@ -205,7 +205,7 @@ def cleanup_old_entries(max_age_minutes: int = 10):
     Args:
         max_age_minutes: Edad máxima en minutos para mantener entradas
     """
-    current_time = datetime.now()
+    current_time = datetime.now(timezone.utc)
     cutoff_time = current_time - timedelta(minutes=max_age_minutes)
     
     # Eliminar clientes sin actividad reciente

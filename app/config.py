@@ -2,7 +2,6 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 from pydantic import field_validator, ValidationInfo
 from typing import List, Union, Literal
 from pathlib import Path
-import warnings
 
 class Settings(BaseSettings):
     # Environment
@@ -30,31 +29,30 @@ class Settings(BaseSettings):
     def validate_jwt_secrets(cls, v: str, info: ValidationInfo) -> str:
         """Valida que los secrets de JWT sean suficientemente seguros"""
         if not v:
-            warnings.warn(
-                f"⚠️ SEGURIDAD: {info.field_name} no está configurado. "
-                "La aplicación no funcionará correctamente.",
-                UserWarning
+            raise ValueError(
+                f"SEGURIDAD: {info.field_name} no está configurado. "
+                "Genera uno con: python -c 'import secrets; print(secrets.token_urlsafe(48))'"
             )
-            return v
-        
         if len(v) < 32:
-            warnings.warn(
-                f"⚠️ SEGURIDAD: {info.field_name} tiene menos de 32 caracteres. "
-                "Se recomienda usar: python -c 'import secrets; print(secrets.token_urlsafe(48))'",
-                UserWarning
+            raise ValueError(
+                f"SEGURIDAD: {info.field_name} tiene menos de 32 caracteres. "
+                "Se recomienda usar: python -c 'import secrets; print(secrets.token_urlsafe(48))'"
             )
-        
         return v
-    
+
     @field_validator('ENCRYPTION_MASTER_KEY')
     @classmethod
     def validate_encryption_key(cls, v: str) -> str:
         """Valida la clave maestra de encriptación"""
-        if v and len(v) < 32:
-            warnings.warn(
-                "⚠️ SEGURIDAD: ENCRYPTION_MASTER_KEY tiene menos de 32 caracteres. "
-                "Se recomienda usar: python -c 'import secrets; print(secrets.token_urlsafe(32))'",
-                UserWarning
+        if not v:
+            raise ValueError(
+                "SEGURIDAD: ENCRYPTION_MASTER_KEY no está configurado. "
+                "Genera uno con: python -c 'import secrets; print(secrets.token_urlsafe(32))'"
+            )
+        if len(v) < 32:
+            raise ValueError(
+                "SEGURIDAD: ENCRYPTION_MASTER_KEY tiene menos de 32 caracteres. "
+                "Se recomienda usar: python -c 'import secrets; print(secrets.token_urlsafe(32))'"
             )
         return v
     

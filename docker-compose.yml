@@ -24,10 +24,10 @@ services:
       DOCKER_CONTAINER: "true"
       
       # Security (generar con: python -c 'import secrets; print(secrets.token_urlsafe(48))')
-      # IMPORTANTE: Cambiar estos valores por secretos reales
-      JWT_SECRET_KEY: ${JWT_SECRET_KEY:-changeme-generate-secure-key}
-      REFRESH_TOKEN_SECRET_KEY: ${REFRESH_TOKEN_SECRET_KEY:-changeme-generate-secure-key}
-      ENCRYPTION_MASTER_KEY: ${ENCRYPTION_MASTER_KEY:-changeme-generate-secure-key}
+      # IMPORTANTE: Definir estos valores en .env antes de arrancar
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:?JWT_SECRET_KEY must be set in .env}
+      REFRESH_TOKEN_SECRET_KEY: ${REFRESH_TOKEN_SECRET_KEY:?REFRESH_TOKEN_SECRET_KEY must be set in .env}
+      ENCRYPTION_MASTER_KEY: ${ENCRYPTION_MASTER_KEY:?ENCRYPTION_MASTER_KEY must be set in .env}
       
       # CORS
       CORS_ORIGINS: http://localhost:4200,http://localhost:3000

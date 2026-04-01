@@ -1,4 +1,5 @@
-from pydantic import BaseModel, Field, UUID4, EmailStr, ConfigDict, field_serializer
+import re
+from pydantic import BaseModel, Field, UUID4, EmailStr, ConfigDict, field_serializer, field_validator
 from typing import Optional
 from datetime import datetime
 
@@ -29,6 +30,19 @@ class UserCreate(UserBase):
     """
     password: str = Field(..., min_length=8, max_length=100, description="Contraseña (mínimo 8 caracteres)")
 
+    @field_validator('password')
+    @classmethod
+    def validate_password_complexity(cls, v: str) -> str:
+        if not re.search(r'[A-Z]', v):
+            raise ValueError('La contraseña debe contener al menos una letra mayúscula')
+        if not re.search(r'[a-z]', v):
+            raise ValueError('La contraseña debe contener al menos una letra minúscula')
+        if not re.search(r'\d', v):
+            raise ValueError('La contraseña debe contener al menos un número')
+        if not re.search(r'[!@#$%^&*(),.?":{}|<>_\-]', v):
+            raise ValueError('La contraseña debe contener al menos un carácter especial (!@#$%...)')
+        return v
+
 # ============================================
 # SCHEMA PARA ACTUALIZAR (PUT)
 # ============================================
@@ -50,7 +64,6 @@ class UserUpdate(BaseModel):
     profile_picture: Optional[str] = None
     password: Optional[str] = Field(None, min_length=8, max_length=100)
     is_active: Optional[bool] = None
-    is_admin: Optional[bool] = None
 
 # ============================================
 # SCHEMA PARA ACTUALIZAR PERFIL (PUT /api/users/me)
@@ -139,6 +152,19 @@ class PasswordChange(BaseModel):
     """
     current_password: str
     new_password: str = Field(..., min_length=8, max_length=100)
+
+    @field_validator('new_password')
+    @classmethod
+    def validate_new_password_complexity(cls, v: str) -> str:
+        if not re.search(r'[A-Z]', v):
+            raise ValueError('La contraseña debe contener al menos una letra mayúscula')
+        if not re.search(r'[a-z]', v):
+            raise ValueError('La contraseña debe contener al menos una letra minúscula')
+        if not re.search(r'\d', v):
+            raise ValueError('La contraseña debe contener al menos un número')
+        if not re.search(r'[!@#$%^&*(),.?":{}|<>_\-]', v):
+            raise ValueError('La contraseña debe contener al menos un carácter especial (!@#$%...)')
+        return v
 # ============================================
 # SCHEMA PARA RESPUESTA DE LOGIN/TOKEN
 # ============================================
