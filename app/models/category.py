@@ -21,8 +21,8 @@ class Category(Base):
             "color ~ '^#[0-9A-Fa-f]{6}$'",
             name='valid_hex_color'
         ),
-        # Nombre único por usuario (permite mismo nombre en diferentes usuarios)
-        UniqueConstraint('user_id', 'name', name='unique_category_per_user'),
+        # Nombre único por usuario y tipo (permite "Bizum" en income y expense a la vez)
+        UniqueConstraint('user_id', 'name', 'type', name='unique_category_per_user'),
     )
 
     # ============================================
@@ -38,9 +38,9 @@ class Category(Base):
     user_id = Column(
         UUID(as_uuid=True),
         ForeignKey('users.id', ondelete='CASCADE'),
-        nullable=True,  # NULL = categoría global/plantilla (para migración)
+        nullable=False,
         index=True,
-        comment="Usuario propietario de la categoría (NULL = global)"
+        comment="Usuario propietario de la categoría"
     )
 
     name = Column(

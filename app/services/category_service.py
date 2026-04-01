@@ -2,7 +2,7 @@
 Servicio de lógica de negocio para Category
 """
 from sqlalchemy.orm import Session
-from sqlalchemy import func, or_
+from sqlalchemy import func
 from typing import List, Optional
 from uuid import UUID
 
@@ -104,10 +104,10 @@ class CategoryService:
         """
         logger.info(f"Buscando categoría ID: {category_id} para user_id: {user_id}")
 
-        # Buscar categoría que sea global (user_id=NULL) o del usuario
+        # Buscar categoría del usuario
         category = db.query(Category).filter(
             Category.id == category_id,
-            or_(Category.user_id == None, Category.user_id == user_id)
+            Category.user_id == user_id
         ).first()
 
         if category:
@@ -143,10 +143,8 @@ class CategoryService:
         )
 
         if user_id:
-            # Buscar en categorías del usuario o globales
-            query = query.filter(
-                or_(Category.user_id == None, Category.user_id == user_id)
-            )
+            # Buscar solo en categorías del usuario
+            query = query.filter(Category.user_id == user_id)
 
         category = query.first()
 
@@ -175,9 +173,9 @@ class CategoryService:
         """
         logger.info(f"Creando nueva categoría: {category_data.name} para user_id: {user_id}")
 
-        # Verificar si el nombre ya existe para este usuario o como global
+        # Verificar si el nombre+tipo ya existe para este usuario
         existing = CategoryService.get_by_name(db, category_data.name, user_id)
-        if existing and (existing.user_id == user_id or existing.user_id is None):
+        if existing and existing.type == category_data.type:
             logger.error(f"La categoría '{category_data.name}' ya existe")
             raise ValueError(f"Ya existe una categoría con el nombre '{category_data.name}'")
 
@@ -311,10 +309,8 @@ class CategoryService:
         """
         logger.info(f"Obteniendo todas las categorías disponibles para user_id: {user_id}, type={category_type}")
 
-        # Categorías globales (user_id=NULL) o del usuario
-        query = db.query(Category).filter(
-            or_(Category.user_id == None, Category.user_id == user_id)
-        )
+        # Categorías del usuario
+        query = db.query(Category).filter(Category.user_id == user_id)
 
         if category_type:
             query = query.filter(Category.type == category_type)
