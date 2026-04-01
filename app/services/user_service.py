@@ -161,9 +161,49 @@ class UserService:
         db.add(user)
         db.commit()
         db.refresh(user)
-        
+
+        # Crear categorías por defecto para el nuevo usuario
+        UserService._create_default_categories(db, user.id)
+
         logger.info(f"Usuario creado: {mask_uuid(str(user.id))}")
         return user
+
+    @staticmethod
+    def _create_default_categories(db: Session, user_id) -> None:
+        """Crea las categorías por defecto al registrar un nuevo usuario."""
+        import uuid
+        from app.models.category import Category
+
+        default_categories = [
+            # Gastos
+            ("Alquiler / Hipoteca",   "expense", "#14B8A6"),
+            ("Ocio y entretenimiento","expense", "#8B5CF6"),
+            ("Restaurantes",          "expense", "#F97316"),
+            ("Ropa y calzado",        "expense", "#EC4899"),
+            ("Salud",                 "expense", "#10B981"),
+            ("Seguros",               "expense", "#6B7280"),
+            ("Suministros del hogar", "expense", "#F59E0B"),
+            ("Supermercado",          "expense", "#84CC16"),
+            ("Suscripciones",         "expense", "#6366F1"),
+            ("Transporte",            "expense", "#06B6D4"),
+            ("Viajes",                "expense", "#EF4444"),
+            # Ingresos
+            ("Intereses",             "income",  "#6EE7B7"),
+            ("Salario",               "income",  "#059669"),
+        ]
+
+        for name, cat_type, color in default_categories:
+            category = Category(
+                id=uuid.uuid4(),
+                name=name,
+                type=cat_type,
+                color=color,
+                user_id=user_id
+            )
+            db.add(category)
+
+        db.commit()
+        logger.info(f"Categorías por defecto creadas para usuario: {mask_uuid(str(user_id))}")
     
     @staticmethod
     def update(db: Session, user_id: UUID, user_data: UserUpdate) -> Optional[User]:
