@@ -569,24 +569,24 @@ async def call_gemini_api(prompt: str) -> str:
         logger.info("🔑 Gemini API configurada correctamente")
         
         # Inicializar modelo
-        model = genai.GenerativeModel(model_name=settings.LLM_MODEL)
-        logger.info(f"🤖 Usando modelo: {settings.LLM_MODEL}")
-        
+        model = genai.GenerativeModel(model_name=settings.LLM_MODEL_ANALYSIS)
+        logger.info(f"🤖 Usando modelo: {settings.LLM_MODEL_ANALYSIS}")
+
         # Contar tokens de entrada
         count_response = model.count_tokens(prompt)
         input_tokens = count_response.total_tokens
-        
+
         # Estimación de salida
         est_output_tokens = int(input_tokens * 0.8)  # Health reports suelen ser más concisos
-        
-        # Precios Nivel 1 (Tier 1) - Gemini 2.0 Flash
-        # Input: $0.10 / 1M tokens | Output: $0.40 / 1M tokens
-        cost_in = (input_tokens / 1_000_000) * 0.10
-        cost_out = (est_output_tokens / 1_000_000) * 0.40
+
+        # Precios Gemini 2.5 Pro
+        # Input: $1.25 / 1M tokens | Output: $10.00 / 1M tokens
+        cost_in = (input_tokens / 1_000_000) * 1.25
+        cost_out = (est_output_tokens / 1_000_000) * 10.00
         total_est_cost = cost_in + cost_out
 
         logger.info(
-            f"💰 ESTIMACIÓN DE COSTE - Modelo: {settings.LLM_MODEL} | "
+            f"💰 ESTIMACIÓN DE COSTE - Modelo: {settings.LLM_MODEL_ANALYSIS} | "
             f"Tokens Entrada: {input_tokens} | "
             f"Tokens Salida (est): {est_output_tokens} | "
             f"Coste Total Est: ${total_est_cost:.6f}"

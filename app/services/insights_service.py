@@ -62,7 +62,7 @@ class InsightsService:
         if GEMINI_AVAILABLE and self.gemini_api_key:
             try:
                 genai.configure(api_key=self.gemini_api_key)
-                self.model = genai.GenerativeModel('gemini-pro')
+                self.model = genai.GenerativeModel(settings.LLM_MODEL_ANALYSIS)
                 print("✅ Gemini AI configured successfully")
             except Exception as e:
                 print(f"⚠️ Error configuring Gemini: {e}")

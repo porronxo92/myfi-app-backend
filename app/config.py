@@ -72,7 +72,8 @@ class Settings(BaseSettings):
     # LLM Configuration
     GEMINI_API_KEY: str = ""
     LLM_PROVIDER: str = "gemini"
-    LLM_MODEL: str = "gemini-2.0-flash"
+    LLM_MODEL: str = "gemini-2.5-flash"           # Chat y Upload: rápido y eficiente
+    LLM_MODEL_ANALYSIS: str = "gemini-2.5-pro"    # Análisis financiero: mejor razonamiento
     
     # Stock Market APIs
     # Finnhub API (Prioridad 1 - 60 llamadas/minuto)
