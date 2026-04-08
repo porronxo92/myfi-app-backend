@@ -493,18 +493,7 @@ DATOS FINANCIEROS DEL USUARIO:
                 func_decl = genai.protos.FunctionDeclaration(
                     name=tool_def["name"],
                     description=tool_def["description"].strip(),
-                    parameters=genai.protos.Schema(
-                        type=genai.protos.Type.OBJECT,
-                        properties={
-                            k: genai.protos.Schema(
-                                type=self._map_type(v.get("type", "string")),
-                                description=v.get("description", ""),
-                                enum=v.get("enum")
-                            )
-                            for k, v in tool_def["parameters"]["properties"].items()
-                        },
-                        required=tool_def["parameters"].get("required", [])
-                    )
+                    parameters=self._build_schema(tool_def["parameters"], genai)
                 )
                 function_declarations.append(func_decl)
 
@@ -514,9 +503,37 @@ DATOS FINANCIEROS DEL USUARIO:
             logger.error(f"Error construyendo herramientas: {e}")
             return []
 
-    def _map_type(self, type_str: str) -> Any:
+    def _build_schema(self, schema_def: Dict[str, Any], genai: Any) -> Any:
+        """Construye recursivamente un genai.protos.Schema desde un JSON Schema dict."""
+        schema_type = self._map_type(schema_def.get("type", "string"), genai)
+
+        kwargs: Dict[str, Any] = {"type": schema_type}
+
+        if schema_def.get("description"):
+            kwargs["description"] = schema_def["description"]
+
+        if schema_def.get("enum"):
+            kwargs["enum"] = schema_def["enum"]
+
+        # Para OBJECT: construir properties y required
+        if schema_def.get("type") == "object" and schema_def.get("properties"):
+            kwargs["properties"] = {
+                k: self._build_schema(v, genai)
+                for k, v in schema_def["properties"].items()
+            }
+            if schema_def.get("required"):
+                kwargs["required"] = schema_def["required"]
+
+        # Para ARRAY: construir items
+        if schema_def.get("type") == "array" and schema_def.get("items"):
+            kwargs["items"] = self._build_schema(schema_def["items"], genai)
+
+        return genai.protos.Schema(**kwargs)
+
+    def _map_type(self, type_str: str, genai: Any = None) -> Any:
         """Mapea tipos de JSON Schema a tipos de Gemini."""
-        import google.generativeai as genai
+        if genai is None:
+            import google.generativeai as genai
 
         type_map = {
             "string": genai.protos.Type.STRING,
