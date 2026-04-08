@@ -30,6 +30,9 @@ logger = get_logger(__name__)
 # ============================================
 
 TOOL_DEFINITIONS = [
+    # ============================================
+    # TRANSACCIONES
+    # ============================================
     {
         "name": "create_transaction",
         "description": """
@@ -70,6 +73,67 @@ TOOL_DEFINITIONS = [
         }
     },
     {
+        "name": "update_transaction",
+        "description": """
+        Modifica una transacción existente.
+        Usa esta función cuando el usuario quiera editar o corregir una transacción.
+        Necesitas el ID de la transacción (puedes buscarlo en el contexto de transacciones recientes).
+        Ejemplos: "cambia el monto del gasto de Mercadona a 50€", "corrige la categoría del último gasto"
+        """,
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "transaction_id": {
+                    "type": "string",
+                    "description": "ID (UUID) de la transacción a modificar"
+                },
+                "amount": {
+                    "type": "number",
+                    "description": "Nuevo monto (opcional)"
+                },
+                "description": {
+                    "type": "string",
+                    "description": "Nueva descripción (opcional)"
+                },
+                "category_name": {
+                    "type": "string",
+                    "description": "Nueva categoría (opcional)"
+                },
+                "date": {
+                    "type": "string",
+                    "description": "Nueva fecha en formato YYYY-MM-DD (opcional)"
+                }
+            },
+            "required": ["transaction_id"]
+        }
+    },
+    {
+        "name": "delete_transaction",
+        "description": """
+        Elimina una transacción existente.
+        Usa esta función cuando el usuario quiera borrar una transacción.
+        Ejemplos: "elimina el gasto de Mercadona", "borra la última transacción"
+        IMPORTANTE: Esta acción es irreversible. Confirma siempre con el usuario.
+        """,
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "transaction_id": {
+                    "type": "string",
+                    "description": "ID (UUID) de la transacción a eliminar"
+                },
+                "description_confirm": {
+                    "type": "string",
+                    "description": "Descripción de la transacción para confirmar (seguridad)"
+                }
+            },
+            "required": ["transaction_id"]
+        }
+    },
+    # ============================================
+    # CATEGORÍAS
+    # ============================================
+    {
         "name": "create_category",
         "description": """
         Crea una nueva categoría para clasificar transacciones.
@@ -94,6 +158,139 @@ TOOL_DEFINITIONS = [
                 }
             },
             "required": ["name", "category_type"]
+        }
+    },
+    {
+        "name": "update_category",
+        "description": """
+        Modifica una categoría existente.
+        Usa esta función cuando el usuario quiera cambiar el nombre o color de una categoría.
+        Ejemplos: "renombra la categoría Ocio a Entretenimiento", "cambia el color de Supermercado a verde"
+        """,
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "category_name": {
+                    "type": "string",
+                    "description": "Nombre actual de la categoría a modificar"
+                },
+                "new_name": {
+                    "type": "string",
+                    "description": "Nuevo nombre (opcional)"
+                },
+                "new_color": {
+                    "type": "string",
+                    "description": "Nuevo color en formato hexadecimal (#RRGGBB) (opcional)"
+                }
+            },
+            "required": ["category_name"]
+        }
+    },
+    {
+        "name": "delete_category",
+        "description": """
+        Elimina una categoría existente.
+        Usa esta función cuando el usuario quiera borrar una categoría.
+        Las transacciones asociadas quedarán sin categoría asignada.
+        Ejemplos: "elimina la categoría Veterinario", "borra la categoría Otros gastos"
+        IMPORTANTE: Esta acción es irreversible.
+        """,
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "category_name": {
+                    "type": "string",
+                    "description": "Nombre de la categoría a eliminar"
+                }
+            },
+            "required": ["category_name"]
+        }
+    },
+    # ============================================
+    # CUENTAS
+    # ============================================
+    {
+        "name": "create_account",
+        "description": """
+        Crea una nueva cuenta bancaria o de efectivo.
+        Usa esta función cuando el usuario quiera añadir una cuenta nueva.
+        Ejemplos: "crea una cuenta de ahorro en ING", "añade mi cuenta de Revolut"
+        """,
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "name": {
+                    "type": "string",
+                    "description": "Nombre descriptivo de la cuenta"
+                },
+                "account_type": {
+                    "type": "string",
+                    "enum": ["checking", "savings", "investment", "credit_card", "cash"],
+                    "description": "Tipo: checking (corriente), savings (ahorro), investment (inversión), credit_card (tarjeta crédito), cash (efectivo)"
+                },
+                "balance": {
+                    "type": "number",
+                    "description": "Saldo inicial de la cuenta (por defecto 0)"
+                },
+                "bank_name": {
+                    "type": "string",
+                    "description": "Nombre del banco (opcional)"
+                },
+                "currency": {
+                    "type": "string",
+                    "description": "Moneda ISO (EUR, USD, etc.). Por defecto EUR"
+                }
+            },
+            "required": ["name", "account_type"]
+        }
+    },
+    {
+        "name": "update_account",
+        "description": """
+        Modifica una cuenta existente.
+        Usa esta función cuando el usuario quiera editar datos de una cuenta.
+        Ejemplos: "cambia el nombre de mi cuenta Santander a Cuenta Principal", "actualiza el saldo de efectivo a 200€"
+        """,
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "account_name": {
+                    "type": "string",
+                    "description": "Nombre actual de la cuenta a modificar"
+                },
+                "new_name": {
+                    "type": "string",
+                    "description": "Nuevo nombre (opcional)"
+                },
+                "new_balance": {
+                    "type": "number",
+                    "description": "Nuevo saldo (opcional)"
+                },
+                "is_active": {
+                    "type": "boolean",
+                    "description": "Si la cuenta está activa (opcional)"
+                }
+            },
+            "required": ["account_name"]
+        }
+    },
+    {
+        "name": "delete_account",
+        "description": """
+        Elimina una cuenta existente.
+        Usa esta función cuando el usuario quiera borrar una cuenta.
+        IMPORTANTE: Esto eliminará también todas las transacciones de esa cuenta.
+        Ejemplos: "elimina mi cuenta de Revolut", "borra la cuenta de efectivo"
+        """,
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "account_name": {
+                    "type": "string",
+                    "description": "Nombre de la cuenta a eliminar"
+                }
+            },
+            "required": ["account_name"]
         }
     }
 ]
@@ -124,15 +321,31 @@ REGLAS IMPORTANTES:
 4. Usa emojis con moderación para hacer la conversación más amigable
 5. Si no tienes datos suficientes para responder algo, dilo claramente
 6. NO inventes datos que no estén en el contexto
-7. Cuando el usuario pida crear algo (transacción, categoría), usa la función correspondiente
+7. Cuando el usuario pida crear, modificar o eliminar algo, usa la función correspondiente
 8. Para montos, usa siempre el formato español: 1.234,56 €
+9. Para operaciones de UPDATE o DELETE, busca primero el ID en el contexto financiero
+10. SIEMPRE pide confirmación antes de eliminar (el sistema mostrará un modal)
 
-ACCIONES DISPONIBLES:
-- create_transaction: Para registrar gastos o ingresos
-- create_category: Para crear nuevas categorías
+ACCIONES DISPONIBLES (CRUD):
+
+📝 TRANSACCIONES:
+- create_transaction: Crear gasto o ingreso
+- update_transaction: Modificar una transacción existente
+- delete_transaction: Eliminar una transacción
+
+📂 CATEGORÍAS:
+- create_category: Crear nueva categoría
+- update_category: Modificar nombre/color de categoría
+- delete_category: Eliminar categoría (transacciones quedan sin categoría)
+
+💳 CUENTAS:
+- create_account: Crear nueva cuenta bancaria/efectivo
+- update_account: Modificar datos de cuenta
+- delete_account: Eliminar cuenta (¡CUIDADO! elimina sus transacciones)
 
 Cuando uses una función, el sistema pedirá confirmación al usuario antes de ejecutar.
 Si el usuario menciona una categoría que no existe, sugiere crearla primero.
+Para operaciones de eliminación, siempre advierte al usuario de las consecuencias.
 
 DATOS FINANCIEROS DEL USUARIO:
 {context}
@@ -347,14 +560,35 @@ DATOS FINANCIEROS DEL USUARIO:
     ) -> Optional[ProposedAction]:
         """Construye una ProposedAction a partir de un function call de Gemini."""
 
+        # Transacciones
         if function_name == "create_transaction":
-            return self._build_transaction_action(args, context)
+            return self._build_create_transaction_action(args, context)
+        elif function_name == "update_transaction":
+            return self._build_update_transaction_action(args, context)
+        elif function_name == "delete_transaction":
+            return self._build_delete_transaction_action(args, context)
+        # Categorías
         elif function_name == "create_category":
-            return self._build_category_action(args, context)
+            return self._build_create_category_action(args, context)
+        elif function_name == "update_category":
+            return self._build_update_category_action(args, context)
+        elif function_name == "delete_category":
+            return self._build_delete_category_action(args, context)
+        # Cuentas
+        elif function_name == "create_account":
+            return self._build_create_account_action(args, context)
+        elif function_name == "update_account":
+            return self._build_update_account_action(args, context)
+        elif function_name == "delete_account":
+            return self._build_delete_account_action(args, context)
 
         return None
 
-    def _build_transaction_action(
+    # ============================================
+    # BUILDERS DE TRANSACCIONES
+    # ============================================
+
+    def _build_create_transaction_action(
         self,
         args: Dict[str, Any],
         context: Dict[str, Any]
@@ -405,7 +639,7 @@ DATOS FINANCIEROS DEL USUARIO:
             }
         )
 
-    def _build_category_action(self, args: Dict[str, Any], context: Dict[str, Any]) -> ProposedAction:
+    def _build_create_category_action(self, args: Dict[str, Any], context: Dict[str, Any]) -> ProposedAction:
         """Construye la acción para crear una categoría."""
         name = args.get("name", "")
         cat_type = args.get("category_type", "expense")
@@ -428,6 +662,191 @@ DATOS FINANCIEROS DEL USUARIO:
                 "type": cat_type,
                 "color": color
             }
+        )
+
+    # ============================================
+    # BUILDERS DE UPDATE/DELETE TRANSACCIONES
+    # ============================================
+
+    def _build_update_transaction_action(self, args: Dict[str, Any], context: Dict[str, Any]) -> ProposedAction:
+        """Construye la acción para actualizar una transacción."""
+        tx_id = args.get("transaction_id", "")
+
+        update_data = {}
+        description_parts = []
+
+        if args.get("amount"):
+            update_data["amount"] = float(args["amount"])
+            description_parts.append(f"monto: {args['amount']}€")
+
+        if args.get("description"):
+            update_data["description"] = args["description"]
+            description_parts.append(f"descripción: {args['description']}")
+
+        if args.get("category_name"):
+            category = self.db.query(Category).filter(
+                Category.user_id == self.user_id,
+                Category.name.ilike(f"%{args['category_name']}%")
+            ).first()
+            if category:
+                update_data["category_id"] = str(category.id)
+                description_parts.append(f"categoría: {args['category_name']}")
+
+        if args.get("date"):
+            update_data["date"] = args["date"]
+            description_parts.append(f"fecha: {args['date']}")
+
+        return ProposedAction(
+            type="update_transaction",
+            description=f"Modificar transacción: {', '.join(description_parts)}" if description_parts else "Modificar transacción",
+            endpoint=f"PUT /api/transactions/{tx_id}",
+            data=update_data
+        )
+
+    def _build_delete_transaction_action(self, args: Dict[str, Any], context: Dict[str, Any]) -> ProposedAction:
+        """Construye la acción para eliminar una transacción."""
+        tx_id = args.get("transaction_id", "")
+        confirm_desc = args.get("description_confirm", "")
+
+        return ProposedAction(
+            type="delete_transaction",
+            description=f"⚠️ ELIMINAR transacción{': ' + confirm_desc if confirm_desc else ''} (irreversible)",
+            endpoint=f"DELETE /api/transactions/{tx_id}",
+            data={}
+        )
+
+    # ============================================
+    # BUILDERS DE UPDATE/DELETE CATEGORÍAS
+    # ============================================
+
+    def _build_update_category_action(self, args: Dict[str, Any], context: Dict[str, Any]) -> ProposedAction:
+        """Construye la acción para actualizar una categoría."""
+        category_name = args.get("category_name", "")
+
+        # Buscar la categoría por nombre
+        category = self.db.query(Category).filter(
+            Category.user_id == self.user_id,
+            Category.name.ilike(f"%{category_name}%")
+        ).first()
+
+        category_id = str(category.id) if category else ""
+
+        update_data = {}
+        description_parts = []
+
+        if args.get("new_name"):
+            update_data["name"] = args["new_name"]
+            description_parts.append(f"nombre: '{args['new_name']}'")
+
+        if args.get("new_color"):
+            update_data["color"] = args["new_color"]
+            description_parts.append(f"color: {args['new_color']}")
+
+        return ProposedAction(
+            type="update_category",
+            description=f"Modificar categoría '{category_name}': {', '.join(description_parts)}" if description_parts else f"Modificar categoría '{category_name}'",
+            endpoint=f"PUT /api/categories/{category_id}",
+            data=update_data
+        )
+
+    def _build_delete_category_action(self, args: Dict[str, Any], context: Dict[str, Any]) -> ProposedAction:
+        """Construye la acción para eliminar una categoría."""
+        category_name = args.get("category_name", "")
+
+        # Buscar la categoría por nombre
+        category = self.db.query(Category).filter(
+            Category.user_id == self.user_id,
+            Category.name.ilike(f"%{category_name}%")
+        ).first()
+
+        category_id = str(category.id) if category else ""
+
+        return ProposedAction(
+            type="delete_category",
+            description=f"⚠️ ELIMINAR categoría '{category_name}' (las transacciones quedarán sin categoría)",
+            endpoint=f"DELETE /api/categories/{category_id}",
+            data={}
+        )
+
+    # ============================================
+    # BUILDERS DE CUENTAS
+    # ============================================
+
+    def _build_create_account_action(self, args: Dict[str, Any], context: Dict[str, Any]) -> ProposedAction:
+        """Construye la acción para crear una cuenta."""
+        name = args.get("name", "")
+        account_type = args.get("account_type", "checking")
+        balance = float(args.get("balance", 0))
+        bank_name = args.get("bank_name", "")
+        currency = args.get("currency", "EUR")
+
+        type_labels = {
+            "checking": "corriente",
+            "savings": "ahorro",
+            "investment": "inversión",
+            "credit_card": "tarjeta crédito",
+            "cash": "efectivo"
+        }
+        type_label = type_labels.get(account_type, account_type)
+
+        return ProposedAction(
+            type="create_account",
+            description=f"Crear cuenta '{name}' ({type_label})" + (f" en {bank_name}" if bank_name else ""),
+            endpoint="POST /api/accounts",
+            data={
+                "name": name,
+                "type": account_type,
+                "balance": balance,
+                "bank_name": bank_name or None,
+                "currency": currency,
+                "is_active": True
+            }
+        )
+
+    def _build_update_account_action(self, args: Dict[str, Any], context: Dict[str, Any]) -> ProposedAction:
+        """Construye la acción para actualizar una cuenta."""
+        account_name = args.get("account_name", "")
+
+        # Buscar la cuenta por nombre
+        account = self._find_account(account_name, context)
+        account_id = account.get("id", "") if account else ""
+
+        update_data = {}
+        description_parts = []
+
+        if args.get("new_name"):
+            update_data["name"] = args["new_name"]
+            description_parts.append(f"nombre: '{args['new_name']}'")
+
+        if args.get("new_balance") is not None:
+            update_data["balance"] = float(args["new_balance"])
+            formatted_balance = f"{args['new_balance']:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".") + " €"
+            description_parts.append(f"saldo: {formatted_balance}")
+
+        if args.get("is_active") is not None:
+            update_data["is_active"] = args["is_active"]
+            description_parts.append(f"activa: {'Sí' if args['is_active'] else 'No'}")
+
+        return ProposedAction(
+            type="update_account",
+            description=f"Modificar cuenta '{account_name}': {', '.join(description_parts)}" if description_parts else f"Modificar cuenta '{account_name}'",
+            endpoint=f"PUT /api/accounts/{account_id}",
+            data=update_data
+        )
+
+    def _build_delete_account_action(self, args: Dict[str, Any], context: Dict[str, Any]) -> ProposedAction:
+        """Construye la acción para eliminar una cuenta."""
+        account_name = args.get("account_name", "")
+
+        # Buscar la cuenta por nombre
+        account = self._find_account(account_name, context)
+        account_id = account.get("id", "") if account else ""
+
+        return ProposedAction(
+            type="delete_account",
+            description=f"⚠️ ELIMINAR cuenta '{account_name}' (¡SE BORRARÁN TODAS SUS TRANSACCIONES!)",
+            endpoint=f"DELETE /api/accounts/{account_id}",
+            data={}
         )
 
     def _find_account(

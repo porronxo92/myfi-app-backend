@@ -30,15 +30,20 @@ class ProposedAction(BaseModel):
     Si el usuario confirma, el frontend llama directamente al endpoint especificado.
 
     Attributes:
-        type: Tipo de acción (create_transaction, create_category)
+        type: Tipo de acción CRUD
         description: Descripción legible para mostrar al usuario en el modal
         endpoint: Endpoint a llamar si el usuario confirma (ej: "POST /api/transactions")
         data: Payload listo para enviar al endpoint
+
+    Tipos de acción disponibles:
+        - Transacciones: create_transaction, update_transaction, delete_transaction
+        - Categorías: create_category, update_category, delete_category
+        - Cuentas: create_account, update_account, delete_account
     """
     type: str = Field(
         ...,
-        pattern="^(create_transaction|create_category)$",
-        description="Tipo de acción a ejecutar"
+        pattern="^(create_transaction|update_transaction|delete_transaction|create_category|update_category|delete_category|create_account|update_account|delete_account)$",
+        description="Tipo de acción CRUD a ejecutar"
     )
     description: str = Field(
         ...,
