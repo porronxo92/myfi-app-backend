@@ -217,3 +217,31 @@ class TransactionResponse(TransactionBase):
     def serialize_datetime(self, dt: datetime, _info) -> str:
         """Convierte datetime a string ISO"""
         return dt.isoformat() if dt else None
+
+
+# ============================================
+# SCHEMA PARA BATCH (crear múltiples)
+# ============================================
+class TransactionBatchCreate(BaseModel):
+    """
+    POST /api/transactions/batch
+
+    Crear múltiples transacciones en una sola petición.
+    Usado por el chat agent para operaciones batch.
+
+    Ejemplo:
+    {
+      "transactions": [
+        {"account_id": "uuid", "amount": -50.00, "description": "Mercadona", "type": "expense", "date": "2026-04-08"},
+        {"account_id": "uuid", "amount": -30.00, "description": "Gasolina", "type": "expense", "date": "2026-04-08"}
+      ]
+    }
+    """
+    transactions: List[TransactionCreate] = Field(..., min_length=1, max_length=50)
+
+
+class TransactionBatchResponse(BaseModel):
+    """Respuesta de creación batch de transacciones"""
+    created: List[TransactionResponse]
+    total: int
+    errors: List[str] = []

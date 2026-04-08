@@ -120,3 +120,31 @@ class AccountResponse(AccountBase):
     def serialize_datetime(self, dt: datetime, _info) -> str:
         """Convierte datetime a string ISO"""
         return dt.isoformat() if dt else None
+
+
+# ============================================
+# SCHEMA PARA BATCH (crear múltiples)
+# ============================================
+class AccountBatchCreate(BaseModel):
+    """
+    POST /api/accounts/batch
+
+    Crear múltiples cuentas en una sola petición.
+    Usado por el chat agent para operaciones batch.
+
+    Ejemplo:
+    {
+      "accounts": [
+        {"name": "ING", "type": "savings", "bank_name": "ING"},
+        {"name": "Revolut", "type": "checking", "bank_name": "Revolut"}
+      ]
+    }
+    """
+    accounts: list[AccountCreate] = Field(..., min_length=1, max_length=20)
+
+
+class AccountBatchResponse(BaseModel):
+    """Respuesta de creación batch de cuentas"""
+    created: list[AccountResponse]
+    total: int
+    errors: list[str] = []

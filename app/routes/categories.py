@@ -8,7 +8,7 @@ from uuid import UUID
 import math
 
 from app.database import get_db
-from app.schemas import CategoryCreate, CategoryUpdate, CategoryResponse, PaginatedResponse
+from app.schemas import CategoryCreate, CategoryUpdate, CategoryResponse, PaginatedResponse, CategoryBatchCreate, CategoryBatchResponse
 from app.services import CategoryService
 from app.utils.security import get_current_user, check_rate_limit
 from app.models import User
@@ -194,7 +194,7 @@ async def create_category(
     **Error:** 400 Bad Request si el nombre ya existe para este usuario
     """
     logger.info(f"Creando nueva categoría: {category_data.name} para user {current_user.email}")
-    
+
     try:
         category = CategoryService.create(db, category_data, user_id=current_user.id)
         logger.info(f"Categoría creada exitosamente: {category.id}")
@@ -211,6 +211,59 @@ async def create_category(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(e)
         )
+
+
+@router.post("/batch", response_model=CategoryBatchResponse, status_code=status.HTTP_201_CREATED)
+async def create_categories_batch(
+    batch_data: CategoryBatchCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    _: bool = Depends(check_rate_limit)
+):
+    """
+    Crear múltiples categorías en una sola petición (batch).
+    Usado principalmente por el agente de chat para crear varias categorías a la vez.
+
+    **Request Body:**
+    ```json
+    {
+      "categories": [
+        {"name": "Comida", "type": "expense", "color": "#EF4444"},
+        {"name": "Transporte", "type": "expense", "color": "#3B82F6"},
+        {"name": "Ocio", "type": "expense", "color": "#10B981"}
+      ]
+    }
+    ```
+
+    **Response:** 201 Created con las categorías creadas
+    ```json
+    {
+      "created": [...],
+      "total": 3,
+      "errors": []
+    }
+    ```
+    """
+    logger.info(f"Creando {len(batch_data.categories)} categorías (batch) para user {current_user.email}")
+
+    created_categories = []
+    errors = []
+
+    for category_data in batch_data.categories:
+        try:
+            category = CategoryService.create(db, category_data, user_id=current_user.id)
+            created_categories.append(CategoryResponse.model_validate(category))
+            logger.info(f"Categoría batch creada: {category.name}")
+        except Exception as e:
+            error_msg = f"Error creando '{category_data.name}': {str(e)}"
+            logger.error(error_msg)
+            errors.append(error_msg)
+
+    return CategoryBatchResponse(
+        created=created_categories,
+        total=len(created_categories),
+        errors=errors
+    )
 
 
 @router.put("/{category_id}", response_model=CategoryResponse)

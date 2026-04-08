@@ -44,3 +44,31 @@ class CategoryResponse(CategoryBase):
     def serialize_datetime(self, dt: datetime, _info) -> str:
         """Convierte datetime a string ISO"""
         return dt.isoformat() if dt else None
+
+
+# ============================================
+# SCHEMA PARA BATCH (crear múltiples)
+# ============================================
+class CategoryBatchCreate(BaseModel):
+    """
+    POST /api/categories/batch
+
+    Crear múltiples categorías en una sola petición.
+    Usado por el chat agent para operaciones batch.
+
+    Ejemplo:
+    {
+      "categories": [
+        {"name": "Comida", "type": "expense", "color": "#EF4444"},
+        {"name": "Transporte", "type": "expense", "color": "#3B82F6"}
+      ]
+    }
+    """
+    categories: list[CategoryCreate] = Field(..., min_length=1, max_length=20)
+
+
+class CategoryBatchResponse(BaseModel):
+    """Respuesta de creación batch de categorías"""
+    created: list[CategoryResponse]
+    total: int
+    errors: list[str] = []

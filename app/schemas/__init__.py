@@ -9,11 +9,11 @@ from app.schemas.user import *
 from app.schemas.pagination import PaginatedResponse
 from app.schemas.investment import *
 
-__all__ = ["AccountCreate", "AccountUpdate", "AccountResponse",
-           "TransactionCreate", "TransactionUpdate", "TransactionResponse", 
-           "CategoryCreate", "CategoryUpdate", "CategoryResponse",
+__all__ = ["AccountCreate", "AccountUpdate", "AccountResponse", "AccountBatchCreate", "AccountBatchResponse",
+           "TransactionCreate", "TransactionUpdate", "TransactionResponse", "TransactionBatchCreate", "TransactionBatchResponse",
+           "CategoryCreate", "CategoryUpdate", "CategoryResponse", "CategoryBatchCreate", "CategoryBatchResponse",
            "PreviewResponse", "ImportRequest", "ImportResponse", "TransactionImport",
-           "InvestmentCreate", "InvestmentUpdate", "InvestmentResponse", 
+           "InvestmentCreate", "InvestmentUpdate", "InvestmentResponse",
            "EnrichedInvestment", "PortfolioSummary", "InvestmentsWithSummary",
            "StockQuote", "StockSearchResult", "InvestmentInsight",
            "PaginatedResponse"]

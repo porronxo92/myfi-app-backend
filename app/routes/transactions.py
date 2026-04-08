@@ -9,7 +9,7 @@ from datetime import date
 import math
 
 from app.database import get_db
-from app.schemas import TransactionCreate, TransactionUpdate, TransactionResponse, PaginatedResponse
+from app.schemas import TransactionCreate, TransactionUpdate, TransactionResponse, PaginatedResponse, TransactionBatchCreate, TransactionBatchResponse
 from app.services import TransactionService
 from app.utils.security import get_current_user, check_rate_limit
 from app.models import User
@@ -245,7 +245,7 @@ async def create_transaction(
     - Se aplica trim automático a los nombres de categoría
     """
     logger.info(f"Creando nueva transacción para user {current_user.email}: {transaction_data.description}")
-    
+
     try:
         transaction = TransactionService.create(db, transaction_data, current_user.id)
         logger.info(f"Transacción creada exitosamente: {transaction.id}")
@@ -262,6 +262,61 @@ async def create_transaction(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(e)
         )
+
+
+@router.post("/batch", response_model=TransactionBatchResponse, status_code=status.HTTP_201_CREATED)
+async def create_transactions_batch(
+    batch_data: TransactionBatchCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    _: bool = Depends(check_rate_limit)
+):
+    """
+    Crear múltiples transacciones en una sola petición (batch).
+    Usado principalmente por el agente de chat para crear varias transacciones a la vez.
+
+    **Request Body:**
+    ```json
+    {
+      "transactions": [
+        {"account_id": "uuid", "amount": -50.00, "description": "Mercadona", "type": "expense", "date": "2026-04-08"},
+        {"account_id": "uuid", "amount": -30.00, "description": "Gasolina", "type": "expense", "date": "2026-04-08"},
+        {"account_id": "uuid", "amount": -15.00, "description": "Café", "type": "expense", "date": "2026-04-08"}
+      ]
+    }
+    ```
+
+    **Response:** 201 Created con las transacciones creadas
+    ```json
+    {
+      "created": [...],
+      "total": 3,
+      "errors": []
+    }
+    ```
+
+    **Nota:** El balance de cada cuenta se actualiza automáticamente
+    """
+    logger.info(f"Creando {len(batch_data.transactions)} transacciones (batch) para user {current_user.email}")
+
+    created_transactions = []
+    errors = []
+
+    for transaction_data in batch_data.transactions:
+        try:
+            transaction = TransactionService.create(db, transaction_data, current_user.id)
+            created_transactions.append(TransactionResponse.model_validate(transaction))
+            logger.info(f"Transacción batch creada: {transaction.description}")
+        except Exception as e:
+            error_msg = f"Error creando '{transaction_data.description}': {str(e)}"
+            logger.error(error_msg)
+            errors.append(error_msg)
+
+    return TransactionBatchResponse(
+        created=created_transactions,
+        total=len(created_transactions),
+        errors=errors
+    )
 
 
 @router.put("/{transaction_id}", response_model=TransactionResponse)

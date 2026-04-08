@@ -42,8 +42,8 @@ class ProposedAction(BaseModel):
     """
     type: str = Field(
         ...,
-        pattern="^(create_transaction|update_transaction|delete_transaction|create_category|update_category|delete_category|create_account|update_account|delete_account)$",
-        description="Tipo de acción CRUD a ejecutar"
+        pattern="^(create_transaction|update_transaction|delete_transaction|create_category|update_category|delete_category|create_account|update_account|delete_account|create_accounts_batch|create_categories_batch|create_transactions_batch)$",
+        description="Tipo de acción CRUD a ejecutar (incluye opciones batch para múltiples items)"
     )
     description: str = Field(
         ...,

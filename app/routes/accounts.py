@@ -8,7 +8,7 @@ from uuid import UUID
 import math
 
 from app.database import get_db
-from app.schemas import AccountCreate, AccountUpdate, AccountResponse, PaginatedResponse
+from app.schemas import AccountCreate, AccountUpdate, AccountResponse, PaginatedResponse, AccountBatchCreate, AccountBatchResponse
 from app.services import AccountService
 from app.utils.security import get_current_user, check_rate_limit
 from app.utils.logger import get_logger
@@ -115,7 +115,7 @@ async def create_account(
 ):
     """
     Crear nueva cuenta para el usuario autenticado
-    
+
     **Request Body:**
     ```json
     {
@@ -129,17 +129,17 @@ async def create_account(
       "notes": "Cuenta principal"
     }
     ```
-    
+
     **Response:** 201 Created con los datos de la cuenta creada
     """
     logger.info(f"Creando nueva cuenta: {account_data.name} para user_id: {current_user.id}")
-    
+
     try:
         # Asignar la cuenta al usuario actual
         account_dict = account_data.model_dump()
         account_dict['user_id'] = current_user.id
         account_data_with_user = AccountCreate(**account_dict)
-        
+
         account = AccountService.create(db, account_data_with_user)
         logger.info(f"Cuenta creada exitosamente: {account.id}")
         return AccountResponse.model_validate(account)
@@ -149,6 +149,63 @@ async def create_account(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(e)
         )
+
+
+@router.post("/batch", response_model=AccountBatchResponse, status_code=status.HTTP_201_CREATED)
+async def create_accounts_batch(
+    batch_data: AccountBatchCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    _: bool = Depends(check_rate_limit)
+):
+    """
+    Crear múltiples cuentas en una sola petición (batch).
+    Usado principalmente por el agente de chat para crear varias cuentas a la vez.
+
+    **Request Body:**
+    ```json
+    {
+      "accounts": [
+        {"name": "ING", "type": "savings", "bank_name": "ING"},
+        {"name": "Revolut", "type": "checking", "bank_name": "Revolut"},
+        {"name": "MyInvestor", "type": "investment", "bank_name": "MyInvestor"}
+      ]
+    }
+    ```
+
+    **Response:** 201 Created con las cuentas creadas
+    ```json
+    {
+      "created": [...],
+      "total": 3,
+      "errors": []
+    }
+    ```
+    """
+    logger.info(f"Creando {len(batch_data.accounts)} cuentas (batch) para user_id: {current_user.id}")
+
+    created_accounts = []
+    errors = []
+
+    for account_data in batch_data.accounts:
+        try:
+            account_dict = account_data.model_dump()
+            account_dict['user_id'] = current_user.id
+            account_data_with_user = AccountCreate(**account_dict)
+
+            account = AccountService.create(db, account_data_with_user)
+            created_accounts.append(AccountResponse.model_validate(account))
+            logger.info(f"Cuenta batch creada: {account.name}")
+        except Exception as e:
+            error_msg = f"Error creando '{account_data.name}': {str(e)}"
+            logger.error(error_msg)
+            errors.append(error_msg)
+
+    return AccountBatchResponse(
+        created=created_accounts,
+        total=len(created_accounts),
+        errors=errors
+    )
 
 
 @router.put("/{account_id}", response_model=AccountResponse)

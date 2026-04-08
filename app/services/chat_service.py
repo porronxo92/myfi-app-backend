@@ -292,6 +292,98 @@ TOOL_DEFINITIONS = [
             },
             "required": ["account_name"]
         }
+    },
+    # ============================================
+    # OPERACIONES BATCH (múltiples items)
+    # ============================================
+    {
+        "name": "create_accounts_batch",
+        "description": """
+        Crea MÚLTIPLES cuentas de una sola vez.
+        USA ESTA FUNCIÓN cuando el usuario quiera crear varias cuentas en un solo mensaje.
+        Ejemplos: "crea estas cuentas: ING, Revolut, MyInvestor", "añade mis cuentas de ahorro e inversión"
+        IMPORTANTE: Usa esta función SIEMPRE que el usuario mencione más de una cuenta a crear.
+        """,
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "accounts": {
+                    "type": "array",
+                    "description": "Array de cuentas a crear",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "name": {"type": "string", "description": "Nombre de la cuenta"},
+                            "account_type": {"type": "string", "enum": ["checking", "savings", "investment", "credit_card", "cash"]},
+                            "bank_name": {"type": "string", "description": "Nombre del banco"},
+                            "balance": {"type": "number", "description": "Saldo inicial"},
+                            "currency": {"type": "string", "description": "Moneda (EUR por defecto)"}
+                        },
+                        "required": ["name", "account_type"]
+                    }
+                }
+            },
+            "required": ["accounts"]
+        }
+    },
+    {
+        "name": "create_categories_batch",
+        "description": """
+        Crea MÚLTIPLES categorías de una sola vez.
+        USA ESTA FUNCIÓN cuando el usuario quiera crear varias categorías en un solo mensaje.
+        Ejemplos: "crea las categorías: Comida, Transporte, Ocio", "añade categorías de gasto para hogar"
+        IMPORTANTE: Usa esta función SIEMPRE que el usuario mencione más de una categoría a crear.
+        """,
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "categories": {
+                    "type": "array",
+                    "description": "Array de categorías a crear",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "name": {"type": "string", "description": "Nombre de la categoría"},
+                            "category_type": {"type": "string", "enum": ["expense", "income"]},
+                            "color": {"type": "string", "description": "Color hexadecimal (#RRGGBB)"}
+                        },
+                        "required": ["name", "category_type"]
+                    }
+                }
+            },
+            "required": ["categories"]
+        }
+    },
+    {
+        "name": "create_transactions_batch",
+        "description": """
+        Crea MÚLTIPLES transacciones de una sola vez.
+        USA ESTA FUNCIÓN cuando el usuario quiera registrar varios gastos o ingresos en un solo mensaje.
+        Ejemplos: "añade estos gastos: 50€ Mercadona, 30€ gasolina, 15€ café", "registra mis compras del fin de semana"
+        IMPORTANTE: Usa esta función SIEMPRE que el usuario mencione más de una transacción a crear.
+        """,
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "transactions": {
+                    "type": "array",
+                    "description": "Array de transacciones a crear",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "amount": {"type": "number", "description": "Monto (positivo)"},
+                            "description": {"type": "string", "description": "Descripción"},
+                            "transaction_type": {"type": "string", "enum": ["expense", "income"]},
+                            "category_name": {"type": "string", "description": "Nombre de categoría"},
+                            "account_name": {"type": "string", "description": "Nombre de cuenta"},
+                            "date": {"type": "string", "description": "Fecha YYYY-MM-DD"}
+                        },
+                        "required": ["amount", "description", "transaction_type"]
+                    }
+                }
+            },
+            "required": ["transactions"]
+        }
     }
 ]
 
@@ -332,16 +424,26 @@ ACCIONES DISPONIBLES (CRUD):
 - create_transaction: Crear gasto o ingreso
 - update_transaction: Modificar una transacción existente
 - delete_transaction: Eliminar una transacción
+- create_transactions_batch: ⚡ Crear MÚLTIPLES transacciones de una vez
 
 📂 CATEGORÍAS:
 - create_category: Crear nueva categoría
 - update_category: Modificar nombre/color de categoría
 - delete_category: Eliminar categoría (transacciones quedan sin categoría)
+- create_categories_batch: ⚡ Crear MÚLTIPLES categorías de una vez
 
 💳 CUENTAS:
 - create_account: Crear nueva cuenta bancaria/efectivo
 - update_account: Modificar datos de cuenta
 - delete_account: Eliminar cuenta (¡CUIDADO! elimina sus transacciones)
+- create_accounts_batch: ⚡ Crear MÚLTIPLES cuentas de una vez
+
+⚡ IMPORTANTE - OPERACIONES BATCH:
+Cuando el usuario pida crear MÁS DE UN elemento del mismo tipo, USA SIEMPRE la función _batch correspondiente.
+Por ejemplo:
+- "Crea cuentas ING, Revolut y MyInvestor" → usa create_accounts_batch
+- "Añade categorías Comida, Transporte y Ocio" → usa create_categories_batch
+- "Registra estos gastos: 50€ Mercadona, 30€ gasolina" → usa create_transactions_batch
 
 Cuando uses una función, el sistema pedirá confirmación al usuario antes de ejecutar.
 Si el usuario menciona una categoría que no existe, sugiere crearla primero.
@@ -581,6 +683,13 @@ DATOS FINANCIEROS DEL USUARIO:
             return self._build_update_account_action(args, context)
         elif function_name == "delete_account":
             return self._build_delete_account_action(args, context)
+        # Batch operations
+        elif function_name == "create_accounts_batch":
+            return self._build_accounts_batch_action(args, context)
+        elif function_name == "create_categories_batch":
+            return self._build_categories_batch_action(args, context)
+        elif function_name == "create_transactions_batch":
+            return self._build_transactions_batch_action(args, context)
 
         return None
 
@@ -847,6 +956,158 @@ DATOS FINANCIEROS DEL USUARIO:
             description=f"⚠️ ELIMINAR cuenta '{account_name}' (¡SE BORRARÁN TODAS SUS TRANSACCIONES!)",
             endpoint=f"DELETE /api/accounts/{account_id}",
             data={}
+        )
+
+    # ============================================
+    # BUILDERS BATCH (múltiples items)
+    # ============================================
+
+    def _build_accounts_batch_action(self, args: Dict[str, Any], context: Dict[str, Any]) -> ProposedAction:
+        """Construye la acción para crear múltiples cuentas."""
+        accounts_data = args.get("accounts", [])
+
+        type_labels = {
+            "checking": "corriente",
+            "savings": "ahorro",
+            "investment": "inversión",
+            "credit_card": "tarjeta crédito",
+            "cash": "efectivo"
+        }
+
+        # Construir datos para el batch
+        items = []
+        descriptions = []
+        for acc in accounts_data:
+            name = acc.get("name", "")
+            account_type = acc.get("account_type", "checking")
+            balance = float(acc.get("balance", 0))
+            bank_name = acc.get("bank_name", "")
+            currency = acc.get("currency", "EUR")
+
+            items.append({
+                "name": name,
+                "type": account_type,
+                "balance": balance,
+                "bank_name": bank_name or None,
+                "currency": currency,
+                "is_active": True
+            })
+
+            type_label = type_labels.get(account_type, account_type)
+            desc = f"'{name}' ({type_label})"
+            if bank_name:
+                desc += f" en {bank_name}"
+            descriptions.append(desc)
+
+        return ProposedAction(
+            type="create_accounts_batch",
+            description=f"Crear {len(items)} cuentas: {', '.join(descriptions)}",
+            endpoint="POST /api/accounts/batch",
+            data={"accounts": items}
+        )
+
+    def _build_categories_batch_action(self, args: Dict[str, Any], context: Dict[str, Any]) -> ProposedAction:
+        """Construye la acción para crear múltiples categorías."""
+        import random
+        categories_data = args.get("categories", [])
+
+        # Construir datos para el batch
+        items = []
+        descriptions = []
+        for cat in categories_data:
+            name = cat.get("name", "")
+            cat_type = cat.get("category_type", "expense")
+            color = cat.get("color")
+
+            # Asignar color por defecto si no se especifica
+            if not color:
+                colors = DEFAULT_COLORS.get(cat_type, DEFAULT_COLORS["expense"])
+                color = random.choice(colors)
+
+            items.append({
+                "name": name,
+                "type": cat_type,
+                "color": color
+            })
+
+            type_label = "gasto" if cat_type == "expense" else "ingreso"
+            descriptions.append(f"'{name}' ({type_label})")
+
+        return ProposedAction(
+            type="create_categories_batch",
+            description=f"Crear {len(items)} categorías: {', '.join(descriptions)}",
+            endpoint="POST /api/categories/batch",
+            data={"categories": items}
+        )
+
+    def _build_transactions_batch_action(self, args: Dict[str, Any], context: Dict[str, Any]) -> ProposedAction:
+        """Construye la acción para crear múltiples transacciones."""
+        transactions_data = args.get("transactions", [])
+
+        # Obtener cuenta por defecto
+        accounts = context.get("cuentas", {}).get("cuentas", [])
+        default_account = accounts[0] if accounts else None
+
+        items = []
+        descriptions = []
+        total_expense = 0
+        total_income = 0
+
+        for tx in transactions_data:
+            amount = float(tx.get("amount", 0))
+            description = tx.get("description", "")
+            tx_type = tx.get("transaction_type", "expense")
+            category_name = tx.get("category_name")
+            account_name = tx.get("account_name")
+            tx_date = tx.get("date", date.today().isoformat())
+
+            # Buscar cuenta
+            account = self._find_account(account_name, context) if account_name else default_account
+
+            # Buscar categoría
+            category_id = None
+            if category_name:
+                category = self.db.query(Category).filter(
+                    Category.user_id == self.user_id,
+                    Category.name.ilike(f"%{category_name}%")
+                ).first()
+                if category:
+                    category_id = str(category.id)
+
+            items.append({
+                "account_id": account.get("id") if account else None,
+                "amount": -amount if tx_type == "expense" else amount,
+                "date": tx_date,
+                "description": description,
+                "type": tx_type,
+                "category_id": category_id,
+                "source": "chat_agent"
+            })
+
+            # Acumular totales
+            if tx_type == "expense":
+                total_expense += amount
+            else:
+                total_income += amount
+
+            formatted = f"{amount:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".") + "€"
+            descriptions.append(f"{description} ({formatted})")
+
+        # Construir descripción resumen
+        summary_parts = []
+        if total_expense > 0:
+            formatted_expense = f"{total_expense:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".") + "€"
+            summary_parts.append(f"{formatted_expense} en gastos")
+        if total_income > 0:
+            formatted_income = f"{total_income:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".") + "€"
+            summary_parts.append(f"{formatted_income} en ingresos")
+
+        return ProposedAction(
+            type="create_transactions_batch",
+            description=f"Crear {len(items)} transacciones ({' y '.join(summary_parts)}): {', '.join(descriptions[:3])}" +
+                       (f"..." if len(descriptions) > 3 else ""),
+            endpoint="POST /api/transactions/batch",
+            data={"transactions": items}
         )
 
     def _find_account(
