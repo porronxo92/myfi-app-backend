@@ -16,10 +16,15 @@ class ChatMessage(BaseModel):
 
     Attributes:
         role: "user" para mensajes del usuario, "assistant" para respuestas del agente
-        content: Contenido del mensaje
+        content: Contenido del mensaje (máximo 4000 caracteres)
     """
     role: str = Field(..., pattern="^(user|assistant)$", description="Rol del mensaje")
-    content: str = Field(..., min_length=1, description="Contenido del mensaje")
+    content: str = Field(
+        ...,
+        min_length=1,
+        max_length=4000,
+        description="Contenido del mensaje (máx 4000 caracteres)"
+    )
 
 
 class ProposedAction(BaseModel):

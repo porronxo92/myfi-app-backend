@@ -3,15 +3,19 @@ Servicio de lógica de negocio para User
 """
 from sqlalchemy.orm import Session
 from sqlalchemy import func
-from typing import List, Optional
+from typing import List, Optional, Tuple
 from uuid import UUID
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 import bcrypt
+import secrets
+import hashlib
 
 from app.models.user import User
+from app.models.password_reset_token import PasswordResetToken
 from app.schemas.user import UserCreate, UserUpdate, PasswordChange
 from app.utils.logger import get_logger
 from app.utils.pii_sanitizer import mask_email, mask_username, mask_uuid
+from app.config import settings
 
 logger = get_logger(__name__)
 
@@ -364,3 +368,217 @@ class UserService:
             query = query.filter(User.is_active == is_active)
         
         return query.scalar()
+
+    # ============================================
+    # MÉTODOS PARA RESET DE CONTRASEÑA
+    # ============================================
+
+    @staticmethod
+    def _hash_token(token: str) -> str:
+        """
+        Hashea un token de reset para almacenarlo de forma segura.
+
+        Args:
+            token: Token en texto plano
+
+        Returns:
+            Hash SHA-256 del token
+        """
+        return hashlib.sha256(token.encode()).hexdigest()
+
+    @staticmethod
+    def _mask_email_for_display(email: str) -> str:
+        """
+        Enmascara un email para mostrar en respuestas.
+        Ejemplo: usuario@example.com -> u***@example.com
+
+        Args:
+            email: Email completo
+
+        Returns:
+            Email parcialmente oculto
+        """
+        parts = email.split('@')
+        if len(parts) != 2:
+            return "***@***"
+
+        local = parts[0]
+        domain = parts[1]
+
+        if len(local) <= 2:
+            masked_local = local[0] + "***"
+        else:
+            masked_local = local[0] + "***"
+
+        return f"{masked_local}@{domain}"
+
+    @staticmethod
+    def create_password_reset_token(db: Session, email: str) -> Optional[Tuple[str, User]]:
+        """
+        Crea un token de reset de contraseña para un usuario.
+
+        Por seguridad:
+        - Invalida tokens anteriores del mismo usuario
+        - El token se almacena hasheado
+        - Retorna el token en texto plano (solo se puede obtener una vez)
+
+        Args:
+            db: Sesión de base de datos
+            email: Email del usuario
+
+        Returns:
+            Tupla (token_texto_plano, user) si el usuario existe, None si no
+        """
+        user = UserService.get_by_email(db, email)
+
+        if not user:
+            logger.info(f"Reset password solicitado para email inexistente: {mask_email(email)}")
+            return None
+
+        if not user.is_active:
+            logger.warning(f"Reset password solicitado para usuario inactivo: {mask_uuid(str(user.id))}")
+            return None
+
+        # Invalidar tokens anteriores del usuario
+        db.query(PasswordResetToken).filter(
+            PasswordResetToken.user_id == user.id,
+            PasswordResetToken.used == False
+        ).update({"used": True})
+
+        # Generar nuevo token (64 caracteres URL-safe)
+        plain_token = secrets.token_urlsafe(48)
+        hashed_token = UserService._hash_token(plain_token)
+
+        # Calcular expiración
+        expires_at = datetime.now(timezone.utc) + timedelta(
+            hours=settings.PASSWORD_RESET_TOKEN_EXPIRE_HOURS
+        )
+
+        # Crear registro
+        reset_token = PasswordResetToken(
+            user_id=user.id,
+            token=hashed_token,
+            expires_at=expires_at,
+            used=False
+        )
+
+        db.add(reset_token)
+        db.commit()
+
+        logger.info(f"Token de reset creado para usuario: {mask_uuid(str(user.id))}")
+
+        return (plain_token, user)
+
+    @staticmethod
+    def verify_password_reset_token(db: Session, plain_token: str) -> Optional[Tuple[bool, str, User]]:
+        """
+        Verifica si un token de reset es válido.
+
+        Args:
+            db: Sesión de base de datos
+            plain_token: Token en texto plano
+
+        Returns:
+            Tupla (valid, masked_email, user) si el token existe, None si no
+        """
+        hashed_token = UserService._hash_token(plain_token)
+
+        token_record = db.query(PasswordResetToken).filter(
+            PasswordResetToken.token == hashed_token
+        ).first()
+
+        if not token_record:
+            logger.warning("Verificación de token inexistente")
+            return None
+
+        user = db.query(User).filter(User.id == token_record.user_id).first()
+
+        if not user:
+            logger.warning(f"Token válido pero usuario no existe: {mask_uuid(str(token_record.user_id))}")
+            return None
+
+        is_valid = token_record.is_valid
+        masked_email = UserService._mask_email_for_display(user.email)
+
+        if not is_valid:
+            reason = "expirado" if token_record.is_expired else "ya usado"
+            logger.info(f"Token {reason} para usuario: {mask_uuid(str(user.id))}")
+
+        return (is_valid, masked_email, user)
+
+    @staticmethod
+    def reset_password_with_token(db: Session, plain_token: str, new_password: str) -> bool:
+        """
+        Restablece la contraseña usando un token válido.
+
+        Args:
+            db: Sesión de base de datos
+            plain_token: Token en texto plano
+            new_password: Nueva contraseña
+
+        Returns:
+            True si se restableció correctamente, False si el token es inválido
+
+        Raises:
+            ValueError: Si el token es inválido o expirado
+        """
+        hashed_token = UserService._hash_token(plain_token)
+
+        token_record = db.query(PasswordResetToken).filter(
+            PasswordResetToken.token == hashed_token
+        ).first()
+
+        if not token_record:
+            logger.warning("Intento de reset con token inexistente")
+            raise ValueError("Token inválido o expirado")
+
+        if not token_record.is_valid:
+            reason = "expirado" if token_record.is_expired else "ya usado"
+            logger.warning(f"Intento de reset con token {reason}")
+            raise ValueError("Token inválido o expirado")
+
+        user = db.query(User).filter(User.id == token_record.user_id).first()
+
+        if not user:
+            logger.error(f"Token válido pero usuario no existe: {mask_uuid(str(token_record.user_id))}")
+            raise ValueError("Usuario no encontrado")
+
+        if not user.is_active:
+            logger.warning(f"Intento de reset para usuario inactivo: {mask_uuid(str(user.id))}")
+            raise ValueError("Usuario inactivo")
+
+        # Actualizar contraseña
+        user.password_hash = UserService._hash_password(new_password)
+
+        # Marcar token como usado
+        token_record.used = True
+
+        db.commit()
+
+        logger.info(f"Contraseña restablecida exitosamente para usuario: {mask_uuid(str(user.id))}")
+
+        return True
+
+    @staticmethod
+    def cleanup_expired_tokens(db: Session) -> int:
+        """
+        Elimina tokens expirados de la base de datos.
+        Puede ejecutarse periódicamente como tarea de mantenimiento.
+
+        Args:
+            db: Sesión de base de datos
+
+        Returns:
+            Número de tokens eliminados
+        """
+        result = db.query(PasswordResetToken).filter(
+            PasswordResetToken.expires_at < datetime.now(timezone.utc)
+        ).delete()
+
+        db.commit()
+
+        if result > 0:
+            logger.info(f"Limpieza: {result} tokens expirados eliminados")
+
+        return result
+

@@ -64,14 +64,25 @@ class ChatContextBuilder:
         return context
 
     def _get_user_info(self) -> Dict[str, Any]:
-        """Obtiene información básica del usuario."""
+        """
+        Obtiene información básica del usuario.
+
+        SEGURIDAD: No se incluye el email ni datos sensibles del usuario.
+        Solo se usa el nombre para personalizar las respuestas.
+        """
         user = self.db.query(User).filter(User.id == self.user_id).first()
         if not user:
             return {"nombre": "Usuario"}
 
+        # Obtener solo el nombre, sin email ni datos sensibles
+        nombre = user.full_name or user.username
+        if not nombre and user.email:
+            # Si solo tenemos email, usar la parte antes del @ sin exponer el email completo
+            nombre = user.email.split("@")[0]
+
         return {
-            "nombre": user.full_name or user.username or user.email.split("@")[0],
-            "email": user.email
+            "nombre": nombre or "Usuario"
+            # SEGURIDAD: No incluir email ni user_id
         }
 
     def _get_accounts_summary(self) -> List[Dict[str, Any]]:

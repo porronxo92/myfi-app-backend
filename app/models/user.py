@@ -145,8 +145,23 @@ class User(Base):
         lazy="select"
     )
 
+    investment_settings = relationship(
+        "InvestmentSettings",
+        back_populates="user",
+        uselist=False,
+        cascade="all, delete-orphan",
+        lazy="select"
+    )
+
     categories = relationship(
         "Category",
+        back_populates="user",
+        cascade="all, delete-orphan",
+        lazy="select"
+    )
+
+    chat_sessions = relationship(
+        "ChatSession",
         back_populates="user",
         cascade="all, delete-orphan",
         lazy="select"

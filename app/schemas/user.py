@@ -211,7 +211,7 @@ class RefreshTokenRequest(BaseModel):
 class ProfilePictureUpdate(BaseModel):
     """
     PUT /api/users/me/profile-picture
-    
+
     Request:
     {
       "profile_picture": "data:image/jpeg;base64,/9j/4AAQ..."
@@ -220,7 +220,88 @@ class ProfilePictureUpdate(BaseModel):
     {
       "profile_picture": "/9j/4AAQ..."  (solo base64)
     }
-    
+
     El backend acepta data URL o base64 puro y extrae el base64 automáticamente.
     """
     profile_picture: str = Field(..., description="Imagen en base64 o data URL (data:image/...;base64,...)")
+
+
+# ============================================
+# SCHEMAS PARA RECUPERACIÓN DE CONTRASEÑA
+# ============================================
+
+class ForgotPasswordRequest(BaseModel):
+    """
+    POST /api/users/forgot-password
+
+    Request:
+    {
+      "email": "usuario@example.com"
+    }
+
+    Siempre retorna 200 OK por seguridad (no revela si el email existe)
+    """
+    email: EmailStr = Field(..., description="Email del usuario")
+
+
+class ForgotPasswordResponse(BaseModel):
+    """
+    Response para forgot-password
+
+    Siempre devuelve el mismo mensaje por seguridad
+    """
+    message: str = Field(
+        default="Si el email existe en nuestro sistema, recibirás un enlace para restablecer tu contraseña.",
+        description="Mensaje de confirmación"
+    )
+
+
+class VerifyResetTokenResponse(BaseModel):
+    """
+    GET /api/users/verify-reset-token?token=xxx
+
+    Response:
+    {
+      "valid": true,
+      "email": "u***@example.com"
+    }
+    """
+    valid: bool = Field(..., description="Si el token es válido")
+    email: Optional[str] = Field(None, description="Email parcialmente oculto (solo si válido)")
+
+
+class ResetPasswordRequest(BaseModel):
+    """
+    POST /api/users/reset-password
+
+    Request:
+    {
+      "token": "abc123...",
+      "new_password": "NewPassword456!"
+    }
+    """
+    token: str = Field(..., description="Token de reset recibido por email")
+    new_password: str = Field(..., min_length=8, max_length=100, description="Nueva contraseña")
+
+    @field_validator('new_password')
+    @classmethod
+    def validate_reset_password_complexity(cls, v: str) -> str:
+        if not re.search(r'[A-Z]', v):
+            raise ValueError('La contraseña debe contener al menos una letra mayúscula')
+        if not re.search(r'[a-z]', v):
+            raise ValueError('La contraseña debe contener al menos una letra minúscula')
+        if not re.search(r'\d', v):
+            raise ValueError('La contraseña debe contener al menos un número')
+        if not re.search(r'[!@#$%^&*(),.?":{}|<>_\-]', v):
+            raise ValueError('La contraseña debe contener al menos un carácter especial (!@#$%...)')
+        return v
+
+
+class ResetPasswordResponse(BaseModel):
+    """
+    Response para reset-password exitoso
+    """
+    message: str = Field(
+        default="Contraseña actualizada correctamente. Ya puedes iniciar sesión.",
+        description="Mensaje de confirmación"
+    )

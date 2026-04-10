@@ -89,8 +89,8 @@ class Settings(BaseSettings):
     BRANDFETCH_CLIENT_ID: str = ""
     
     # File Upload
-    MAX_FILE_SIZE_MB: int = 10
-    ALLOWED_EXTENSIONS: Union[str, List[str]] = "pdf,xlsx,csv,txt"
+    MAX_FILE_SIZE_MB: int = 2  # Máximo 2MB para evitar costes excesivos de procesamiento
+    ALLOWED_EXTENSIONS: Union[str, List[str]] = "pdf,xlsx,xls,csv,txt"  # Incluye xls (Excel antiguo)
     
     # CORS
     CORS_ORIGINS: Union[str, List[str]] = "http://localhost:4200,http://localhost:3000"
@@ -111,6 +111,28 @@ class Settings(BaseSettings):
 
     # Gemini API Quota (per user per day)
     GEMINI_DAILY_LIMIT_PER_USER: int = 20
+
+    # ============================================
+    # EMAIL CONFIGURATION
+    # ============================================
+
+    # Email provider settings
+    EMAIL_FROM: str = "noreply@appfinanzas.com"
+    EMAIL_FROM_NAME: str = "AppFinanzas"
+    EMAIL_FORCE_SEND: bool = False  # En dev, fuerza envío real si True
+
+    # SMTP Configuration (Gmail, Outlook, etc.)
+    SMTP_HOST: str = ""
+    SMTP_PORT: int = 587
+    SMTP_USERNAME: str = ""
+    SMTP_PASSWORD: str = ""
+    SMTP_USE_TLS: bool = True
+
+    # SendGrid Configuration (alternativa a SMTP)
+    SENDGRID_API_KEY: str = ""
+
+    # Password Reset Token Configuration
+    PASSWORD_RESET_TOKEN_EXPIRE_HOURS: int = 1  # Token expira en 1 hora
 
     @property
     def DATABASE_URL(self) -> str:

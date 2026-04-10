@@ -211,14 +211,16 @@ class EnrichedInvestment(InvestmentResponse):
 class PortfolioSummary(BaseModel):
     """Resumen del portfolio completo"""
     model_config = ConfigDict(populate_by_name=True)
-    
-    total_value: float = Field(..., description="Valor total del portfolio", serialization_alias="totalValue")
-    total_invested: float = Field(..., description="Total invertido", serialization_alias="totalInvested")
-    total_gain_loss: float = Field(..., description="Ganancia/pérdida total", serialization_alias="totalGainLoss")
-    total_gain_loss_percent: float = Field(..., description="% de rendimiento", serialization_alias="totalGainLossPercent")
+
+    total_value: float = Field(..., description="Valor total del portfolio (investedValue + cashBalance)", serialization_alias="totalValue")
+    total_invested: float = Field(..., description="Total invertido originalmente", serialization_alias="totalInvested")
+    total_gain_loss: float = Field(..., description="Ganancia/pérdida total (solo posiciones)", serialization_alias="totalGainLoss")
+    total_gain_loss_percent: float = Field(..., description="% de rendimiento (solo posiciones)", serialization_alias="totalGainLossPercent")
     day_change: float = Field(..., description="Cambio total del día", serialization_alias="dayChange")
     day_change_percent: float = Field(..., description="% cambio del día", serialization_alias="dayChangePercent")
     positions_count: int = Field(..., description="Número de posiciones", serialization_alias="positionsCount")
+    cash_balance: float = Field(0.0, description="Efectivo no invertido", serialization_alias="cashBalance")
+    invested_value: float = Field(0.0, description="Valor actual de las posiciones", serialization_alias="investedValue")
 
 
 class InvestmentInsight(BaseModel):
@@ -227,6 +229,35 @@ class InvestmentInsight(BaseModel):
     title: str
     message: str
     icon: str
+
+
+# ============================================
+# CASH BALANCE SCHEMAS
+# ============================================
+
+class CashBalanceUpdate(BaseModel):
+    """Schema para actualizar cash balance"""
+    model_config = ConfigDict(populate_by_name=True)
+
+    cash_balance: Decimal = Field(
+        ...,
+        ge=0,
+        description="Efectivo no invertido (debe ser >= 0)",
+        validation_alias="cashBalance"
+    )
+
+    @field_validator('cash_balance')
+    @classmethod
+    def round_cash_balance(cls, v: Decimal) -> Decimal:
+        """Redondear a 2 decimales"""
+        return round(v, 2) if isinstance(v, Decimal) else Decimal(str(v)).quantize(Decimal("0.01"))
+
+
+class CashBalanceResponse(BaseModel):
+    """Schema para respuesta de cash balance"""
+    model_config = ConfigDict(populate_by_name=True)
+
+    cash_balance: float = Field(..., description="Efectivo no invertido", serialization_alias="cashBalance")
 
 
 # ============================================

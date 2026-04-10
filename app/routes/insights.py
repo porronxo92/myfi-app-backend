@@ -436,8 +436,14 @@ async def chat_with_agent(
     """
     Agente conversacional financiero con Gemini AI.
 
+    SEGURIDAD:
+    - Los mensajes se sanitizan antes de procesarse
+    - Se detectan y bloquean intentos de prompt injection
+    - El historial se valida y sanitiza
+    - (Cuando está habilitado) El historial se almacena en servidor
+
     Permite al usuario conversar en lenguaje natural sobre sus finanzas.
-    El agente tiene acceso completo a los datos financieros del usuario y puede:
+    El agente tiene acceso a los datos financieros del usuario y puede:
     - Responder preguntas sobre cuentas, gastos, presupuestos, etc.
     - Proponer acciones (crear transacciones, categorías) que requieren confirmación
 
@@ -484,17 +490,48 @@ async def chat_with_agent(
     4. Si cancela, no se ejecuta nada
 
     **Notas:**
-    - El historial de conversación debe mantenerse en el frontend (sesión)
+    - Los mensajes se sanitizan para prevenir prompt injection
     - Cada llamada consume 1 petición del límite diario de Gemini
     - El contexto financiero se carga automáticamente en cada mensaje
     """
+    from app.services.chat_session_service import ChatSessionService
+    from app.utils.logger import get_logger
+
+    logger = get_logger(__name__)
+
     try:
         chat_service = ChatService(db, current_user.id)
 
+        # Intentar usar sesiones del servidor si la tabla existe
+        server_history = None
+        session = None
+
+        try:
+            session_service = ChatSessionService(db)
+            session = session_service.get_or_create_session(current_user.id)
+            server_history = session_service.get_history(session.id)
+            logger.debug(f"Usando historial del servidor ({len(server_history)} mensajes)")
+        except Exception as e:
+            # Tabla chat_sessions no existe aún, usar historial del frontend
+            logger.debug(f"Sesiones de servidor no disponibles, usando frontend: {e}")
+            server_history = None
+
+        # Usar historial del servidor si está disponible, sino del frontend
+        conversation_history = server_history if server_history is not None else request.conversation_history
+
+        # Procesar mensaje (la sanitización está en ChatService)
         response = await chat_service.process_message(
             message=request.message,
-            conversation_history=request.conversation_history
+            conversation_history=conversation_history
         )
+
+        # Guardar en servidor si está disponible
+        if session is not None:
+            try:
+                session_service.add_message(session.id, "user", request.message)
+                session_service.add_message(session.id, "assistant", response.message)
+            except Exception as e:
+                logger.warning(f"Error guardando mensajes en servidor: {e}")
 
         return response
 

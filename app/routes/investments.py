@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 from typing import List, Optional
 from uuid import UUID
+from decimal import Decimal
 
 from app.database import get_db
 from app.schemas.investment import (
@@ -17,7 +18,9 @@ from app.schemas.investment import (
     EnrichedInvestment,
     InvestmentsWithSummary,
     StockSearchResult,
-    StockQuote
+    StockQuote,
+    CashBalanceUpdate,
+    CashBalanceResponse
 )
 from app.services.investment_service import investment_service
 from app.services.stock_api_service import stock_api_service
@@ -192,16 +195,19 @@ async def list_investments(
     
     # Obtener inversiones de la BD
     investments = investment_service.get_user_investments(db, current_user.id, status_filter)
-    
+
+    # Obtener cash balance del usuario
+    cash_balance = investment_service.get_user_cash_balance(db, current_user.id)
+
     # Enriquecer con datos de mercado (solo para activas)
     if status_filter == InvestmentStatus.ACTIVE or status_filter is None:
         enriched = await investment_service.enrich_investments(investments)
     else:
         # Para vendidas, no enriquecemos (no tiene sentido cotización actual)
         enriched = [investment_service.convert_to_enriched(inv) for inv in investments]
-    
-    # Calcular resumen del portfolio
-    summary = investment_service.calculate_portfolio_summary(enriched)
+
+    # Calcular resumen del portfolio (incluyendo cash balance)
+    summary = investment_service.calculate_portfolio_summary(enriched, cash_balance)
     
     # Generar insights
     insights = investment_service.generate_insights(enriched, summary)
@@ -211,6 +217,46 @@ async def list_investments(
         summary=summary,
         insights=insights
     )
+
+
+# ============================================
+# CASH BALANCE - Gestionar efectivo no invertido
+# ============================================
+
+@router.put("/cash", response_model=CashBalanceResponse)
+async def update_cash_balance(
+    data: CashBalanceUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    _: bool = Depends(check_rate_limit)
+):
+    """
+    Actualizar el efectivo no invertido (cash balance) del usuario
+
+    **Request body:**
+    ```json
+    {
+        "cashBalance": 5000.00
+    }
+    ```
+
+    **Validaciones:**
+    - cashBalance debe ser >= 0
+
+    **Respuesta:**
+    ```json
+    {
+        "cashBalance": 5000.00
+    }
+    ```
+    """
+    logger.info(f"User {current_user.id} updating cash balance to {data.cash_balance}")
+
+    cash_balance = investment_service.update_user_cash_balance(
+        db, current_user.id, data.cash_balance
+    )
+
+    return CashBalanceResponse(cash_balance=cash_balance)
 
 
 # ============================================
@@ -266,9 +312,12 @@ async def create_investment(
     - notes: Notas adicionales (opcional)
     """
     logger.info(f"User {current_user.id} creating investment: {investment_data.symbol}")
-    
-    investment = investment_service.create_investment(db, investment_data, current_user.id)
-    
+
+    try:
+        investment = investment_service.create_investment(db, investment_data, current_user.id)
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+
     return investment
 
 
@@ -352,20 +401,28 @@ async def sell_investment(
         sale_date=sell_data.sale_date,
         notes=sell_data.notes
     )
-    
+
     investment = investment_service.update_investment(
         db,
         investment_id,
         update_data,
         current_user.id
     )
-    
+
     if not investment:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Investment not found"
         )
-    
+
+    # Añadir importe de venta al cash balance
+    sale_proceeds = float(investment.shares) * float(sell_data.sale_price)
+    current_cash = investment_service.get_user_cash_balance(db, current_user.id)
+    investment_service.update_user_cash_balance(
+        db, current_user.id, Decimal(str(current_cash + sale_proceeds))
+    )
+    logger.info(f"Added {sale_proceeds:.2f} to cash balance for user {current_user.id} from sale of {investment_id}")
+
     return investment
 
 

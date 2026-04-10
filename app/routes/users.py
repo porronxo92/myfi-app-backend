@@ -9,7 +9,7 @@ import math
 import base64
 
 from app.database import get_db
-from app.schemas.user import UserCreate, UserUpdate, UserResponse, UserLogin, PasswordChange, TokenResponse, RefreshTokenRequest, UpdateUserProfile, ProfilePictureUpdate
+from app.schemas.user import UserCreate, UserUpdate, UserResponse, UserLogin, PasswordChange, TokenResponse, RefreshTokenRequest, UpdateUserProfile, ProfilePictureUpdate, ForgotPasswordRequest, ForgotPasswordResponse, VerifyResetTokenResponse, ResetPasswordRequest, ResetPasswordResponse
 from app.schemas.pagination import PaginatedResponse
 from app.services.user_service import UserService
 from app.models.user import User
@@ -622,6 +622,152 @@ async def logout(
     logger.info(f"POST /api/users/logout - Usuario: {current_user.id}")
     
     return {"message": "Sesión cerrada correctamente"}
+
+
+# ============================================
+# RECUPERACIÓN DE CONTRASEÑA
+# ============================================
+
+@router.post("/forgot-password", response_model=ForgotPasswordResponse, status_code=status.HTTP_200_OK)
+async def forgot_password(
+    data: ForgotPasswordRequest,
+    db: Session = Depends(get_db),
+    _: bool = Depends(check_rate_limit)
+):
+    """
+    Solicitar restablecimiento de contraseña
+
+    Envía un email con un enlace para restablecer la contraseña.
+    Por seguridad, siempre retorna 200 OK (no revela si el email existe).
+
+    Request:
+    ```json
+    {
+      "email": "usuario@example.com"
+    }
+    ```
+
+    Response:
+    ```json
+    {
+      "message": "Si el email existe en nuestro sistema, recibirás un enlace para restablecer tu contraseña."
+    }
+    ```
+    """
+    from app.services.email_service import email_service
+
+    logger.info(f"POST /api/users/forgot-password - Email: {data.email[:3]}***")
+
+    # Intentar crear token (solo si el usuario existe)
+    result = UserService.create_password_reset_token(db, data.email)
+
+    if result:
+        plain_token, user = result
+        # Enviar email en background (no bloquear respuesta)
+        try:
+            await email_service.send_password_reset_email(
+                to=user.email,
+                reset_token=plain_token,
+                user_name=user.full_name
+            )
+        except Exception as e:
+            # Log error pero no falla la respuesta
+            logger.error(f"Error al enviar email de reset: {e}")
+
+    # Siempre retornamos el mismo mensaje por seguridad
+    return ForgotPasswordResponse()
+
+
+@router.get("/verify-reset-token", response_model=VerifyResetTokenResponse)
+async def verify_reset_token(
+    token: str,
+    db: Session = Depends(get_db),
+    _: bool = Depends(check_rate_limit)
+):
+    """
+    Verificar si un token de reset es válido
+
+    El frontend usa esto para mostrar el formulario de nueva contraseña
+    o un mensaje de error si el token es inválido/expirado.
+
+    Query params:
+    - token: Token recibido por email
+
+    Response (token válido):
+    ```json
+    {
+      "valid": true,
+      "email": "u***@example.com"
+    }
+    ```
+
+    Response (token inválido):
+    ```json
+    {
+      "valid": false,
+      "email": null
+    }
+    ```
+    """
+    logger.info(f"GET /api/users/verify-reset-token")
+
+    result = UserService.verify_password_reset_token(db, token)
+
+    if not result:
+        return VerifyResetTokenResponse(valid=False, email=None)
+
+    is_valid, masked_email, _ = result
+
+    return VerifyResetTokenResponse(
+        valid=is_valid,
+        email=masked_email if is_valid else None
+    )
+
+
+@router.post("/reset-password", response_model=ResetPasswordResponse, status_code=status.HTTP_200_OK)
+async def reset_password(
+    data: ResetPasswordRequest,
+    db: Session = Depends(get_db),
+    _: bool = Depends(check_rate_limit)
+):
+    """
+    Restablecer contraseña con token válido
+
+    Request:
+    ```json
+    {
+      "token": "abc123...",
+      "new_password": "NewPassword456!"
+    }
+    ```
+
+    Response (éxito):
+    ```json
+    {
+      "message": "Contraseña actualizada correctamente. Ya puedes iniciar sesión."
+    }
+    ```
+
+    Errores:
+    - 400: Token inválido, expirado o ya usado
+    - 400: Nueva contraseña no cumple requisitos
+    """
+    logger.info("POST /api/users/reset-password")
+
+    try:
+        UserService.reset_password_with_token(db, data.token, data.new_password)
+        return ResetPasswordResponse()
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+    except Exception as e:
+        logger.error(f"Error al resetear contraseña: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Error interno del servidor"
+        )
 
 
 # ============================================

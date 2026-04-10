@@ -11,6 +11,7 @@ from uuid import UUID
 from decimal import Decimal
 
 from app.models.investment import Investment, InvestmentStatus
+from app.models.investment_settings import InvestmentSettings
 from app.schemas.investment import (
     InvestmentCreate,
     InvestmentUpdate,
@@ -27,7 +28,59 @@ logger = get_logger(__name__)
 
 class InvestmentService:
     """Servicio para gestión de inversiones"""
-    
+
+    @staticmethod
+    def get_user_cash_balance(db: Session, user_id: UUID) -> float:
+        """
+        Obtener el cash balance del usuario
+
+        Args:
+            db: Sesión de base de datos
+            user_id: ID del usuario
+
+        Returns:
+            Cash balance del usuario (0.0 si no tiene registro)
+        """
+        settings = db.query(InvestmentSettings).filter(
+            InvestmentSettings.user_id == user_id
+        ).first()
+
+        if settings:
+            return float(settings.cash_balance)
+        return 0.0
+
+    @staticmethod
+    def update_user_cash_balance(db: Session, user_id: UUID, cash_balance: Decimal) -> float:
+        """
+        Actualizar el cash balance del usuario
+
+        Args:
+            db: Sesión de base de datos
+            user_id: ID del usuario
+            cash_balance: Nuevo valor de cash balance
+
+        Returns:
+            Cash balance actualizado
+        """
+        settings = db.query(InvestmentSettings).filter(
+            InvestmentSettings.user_id == user_id
+        ).first()
+
+        if settings:
+            settings.cash_balance = cash_balance
+        else:
+            settings = InvestmentSettings(
+                user_id=user_id,
+                cash_balance=cash_balance
+            )
+            db.add(settings)
+
+        db.commit()
+        db.refresh(settings)
+
+        logger.info(f"Updated cash balance for user {user_id}: {cash_balance}")
+        return float(settings.cash_balance)
+
     @staticmethod
     def get_user_investments(db: Session, user_id: UUID, status: Optional[InvestmentStatus] = None) -> List[Investment]:
         """
@@ -77,16 +130,27 @@ class InvestmentService:
     @staticmethod
     def create_investment(db: Session, investment_data: InvestmentCreate, user_id: UUID) -> Investment:
         """
-        Crear nueva inversión
-        
-        Args:
-            db: Sesión de base de datos
-            investment_data: Datos de la inversión
-            user_id: ID del usuario
-            
-        Returns:
-            Inversión creada
+        Crear nueva inversión, descontando el coste del cash balance.
+        Lanza ValueError si el efectivo disponible es insuficiente.
         """
+        cost = Decimal(str(investment_data.shares)) * Decimal(str(investment_data.average_price))
+
+        # Verificar cash balance
+        settings = db.query(InvestmentSettings).filter(
+            InvestmentSettings.user_id == user_id
+        ).first()
+
+        current_cash = Decimal(str(settings.cash_balance)) if settings else Decimal("0")
+
+        if current_cash < cost:
+            raise ValueError(
+                f"Efectivo insuficiente. Disponible: {float(current_cash):.2f}, "
+                f"Necesario: {float(cost):.2f}"
+            )
+
+        # Descontar del cash balance (antes del commit, misma transacción)
+        settings.cash_balance = current_cash - cost
+
         investment = Investment(
             user_id=user_id,
             symbol=investment_data.symbol,
@@ -94,15 +158,18 @@ class InvestmentService:
             shares=investment_data.shares,
             average_price=investment_data.average_price,
             purchase_date=investment_data.purchase_date,
-            status=InvestmentStatus.ACTIVE,  # Siempre inicia como 'active'
+            status=InvestmentStatus.ACTIVE,
             notes=investment_data.notes
         )
-        
+
         db.add(investment)
         db.commit()
         db.refresh(investment)
-        
-        logger.info(f"Created investment {investment.id} for user {user_id}: {investment.symbol}")
+
+        logger.info(
+            f"Created investment {investment.id} for user {user_id}: {investment.symbol}, "
+            f"deducted {cost} from cash (remaining: {settings.cash_balance})"
+        )
         return investment
     
     @staticmethod
@@ -272,37 +339,49 @@ class InvestmentService:
         return enriched
     
     @staticmethod
-    def calculate_portfolio_summary(enriched_investments: List[EnrichedInvestment]) -> PortfolioSummary:
+    def calculate_portfolio_summary(
+        enriched_investments: List[EnrichedInvestment],
+        cash_balance: float = 0.0
+    ) -> PortfolioSummary:
         """
         Calcular resumen del portfolio
-        
+
         Args:
             enriched_investments: Lista de inversiones enriquecidas
-            
+            cash_balance: Efectivo no invertido del usuario
+
         Returns:
             Resumen del portfolio
         """
         if not enriched_investments:
             return PortfolioSummary(
-                total_value=0.0,
+                total_value=round(cash_balance, 2),
                 total_invested=0.0,
                 total_gain_loss=0.0,
                 total_gain_loss_percent=0.0,
                 day_change=0.0,
                 day_change_percent=0.0,
-                positions_count=0
+                positions_count=0,
+                cash_balance=round(cash_balance, 2),
+                invested_value=0.0
             )
-        
-        total_value = sum(inv.total_value for inv in enriched_investments)
+
+        # invested_value es el valor actual de las posiciones
+        invested_value = sum(inv.total_value for inv in enriched_investments)
         total_invested = sum(float(inv.shares) * float(inv.average_price) for inv in enriched_investments)
-        total_gain_loss = total_value - total_invested
+
+        # P&L se calcula solo sobre las posiciones (no incluye cash)
+        total_gain_loss = invested_value - total_invested
         total_gain_loss_percent = (total_gain_loss / total_invested * 100) if total_invested > 0 else 0
         day_change = sum(inv.day_change for inv in enriched_investments)
-        
-        # Valor del portfolio al inicio del día
-        portfolio_yesterday = total_value - day_change
+
+        # Valor del portfolio al inicio del día (solo posiciones)
+        portfolio_yesterday = invested_value - day_change
         day_change_percent = (day_change / portfolio_yesterday * 100) if portfolio_yesterday > 0 else 0
-        
+
+        # total_value incluye cash + posiciones
+        total_value = invested_value + cash_balance
+
         return PortfolioSummary(
             total_value=round(total_value, 2),
             total_invested=round(total_invested, 2),
@@ -310,7 +389,9 @@ class InvestmentService:
             total_gain_loss_percent=round(total_gain_loss_percent, 2),
             day_change=round(day_change, 2),
             day_change_percent=round(day_change_percent, 2),
-            positions_count=len(enriched_investments)
+            positions_count=len(enriched_investments),
+            cash_balance=round(cash_balance, 2),
+            invested_value=round(invested_value, 2)
         )
     
     @staticmethod
