@@ -1,49 +1,213 @@
-# Archivos de configuración sensibles
-# Excluir todos los archivos .env excepto los .example
-.env
-.env.*
-!.env.*.example
+# ============================================
+# ARCHIVOS DE CONFIGURACIÓN SENSIBLES
+# ============================================
 
-# Python
+# Variables de entorno (contienen secretos, API keys, contraseñas)
+.env
+.env.local
+.env.*.local
+.env.development
+.env.pre
+.env.production
+
+# Archivos de configuración locales
+config.local.py
+*.secret
+*.key
+*.pem
+*.p12
+*.pfx
+
+# ============================================
+# PYTHON
+# ============================================
+
+# Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
 *$py.class
 *.so
+
+# Distribution / packaging
 .Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+pip-wheel-metadata/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual environments
 env/
 venv/
 ENV/
-build/
-dist/
-*.egg-info/
+env.bak/
+venv.bak/
+.venv/
 
-# Archivos temporales
-temp_uploads/
+# PyInstaller
+*.manifest
+*.spec
+
+# Unit test / coverage
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.nox/
+coverage.xml
+*.cover
 *.log
-logs/
 
-# IDE
+# ============================================
+# ARCHIVOS TEMPORALES Y LOGS
+# ============================================
+
+# Logs del sistema
+logs/
+*.log
+logsBackend/
+
+# Archivos temporales de uploads
+temp_uploads/
+tmp/
+temp/
+
+# Cache files
+.cache/
+*.cache
+
+# ============================================
+# BASE DE DATOS Y BACKUPS
+# ============================================
+
+# Backups locales de base de datos (NO deben subirse)
+backupsBBDD/
+*.sql.backup
+*.dump
+*.sqlite
+*.db
+
+# Archivos de base de datos locales
+*.sqlite3
+local.db
+
+# ============================================
+# IDE Y EDITORES
+# ============================================
+
+# Visual Studio Code
 .vscode/
+*.code-workspace
+
+# PyCharm
 .idea/
+*.iml
+*.iws
+.idea_modules/
+
+# Sublime Text
+*.sublime-project
+*.sublime-workspace
+
+# Vim
 *.swp
 *.swo
 *~
+.*.sw[a-z]
 
-# OS
+# Emacs
+*~
+\#*\#
+.\#*
+
+# ============================================
+# SISTEMA OPERATIVO
+# ============================================
+
+# macOS
 .DS_Store
+.AppleDouble
+.LSOverride
+Icon
+._*
+
+# Windows
 Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
 
-# Documentación
-docs/
-*.md
-!README.md
+# Linux
+.directory
+.Trash-*
 
-#Base de Datos
-migrations/
+# ============================================
+# DOCKER (si se usa)
+# ============================================
 
-# Backups
-backupsBBDD/
+# Docker volumes y data persistente
+docker-compose.override.yml
+.dockerignore
 
-#scripts
-tests/
+# ============================================
+# JUPYTER NOTEBOOKS (si se usan)
+# ============================================
 
+.ipynb_checkpoints/
+*/.ipynb_checkpoints/*
+
+# ============================================
+# ARCHIVOS PERSONALES Y NOTAS
+# ============================================
+
+# Notas personales de desarrollo
+NOTES.md
+TODO_PERSONAL.md
+.scratch/
+
+# ============================================
+# CI/CD Y DEPLOYMENT
+# ============================================
+
+# Secrets de deployment
+.secrets/
+credentials/
+
+# ============================================
+# OTROS
+# ============================================
+
+# Node modules (si hay frontend integrado)
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Archivos comprimidos temporales
+*.zip
+*.tar.gz
+*.rar
+*.7z
+
+# Certificados SSL locales
+*.crt
+*.cert
+ssl/
+
+# Profiling
+*.prof
+*.lprof
