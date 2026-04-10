@@ -127,6 +127,7 @@ class Settings(BaseSettings):
     SMTP_USERNAME: str = ""
     SMTP_PASSWORD: str = ""
     SMTP_USE_TLS: bool = True
+    PASSWORD_EMAIL_GMAIL: str = ""  # App Password de Gmail (16 dígitos)
 
     # SendGrid Configuration (alternativa a SMTP)
     SENDGRID_API_KEY: str = ""

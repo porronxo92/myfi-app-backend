@@ -184,11 +184,16 @@ class EmailService:
         smtp_host = getattr(settings, 'SMTP_HOST', '')
         if smtp_host:
             logger.info("EmailService: Usando SMTPEmailProvider")
+            # PASSWORD_EMAIL_GMAIL tiene prioridad sobre SMTP_PASSWORD (App Password de Gmail)
+            smtp_password = (
+                getattr(settings, 'PASSWORD_EMAIL_GMAIL', '')
+                or getattr(settings, 'SMTP_PASSWORD', '')
+            )
             return SMTPEmailProvider(
                 host=smtp_host,
                 port=getattr(settings, 'SMTP_PORT', 587),
                 username=getattr(settings, 'SMTP_USERNAME', ''),
-                password=getattr(settings, 'SMTP_PASSWORD', ''),
+                password=smtp_password,
                 from_email=getattr(settings, 'EMAIL_FROM', 'noreply@appfinanzas.com'),
                 from_name=getattr(settings, 'EMAIL_FROM_NAME', 'AppFinanzas'),
                 use_tls=getattr(settings, 'SMTP_USE_TLS', True)
