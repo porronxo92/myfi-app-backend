@@ -245,3 +245,116 @@ class TransactionBatchResponse(BaseModel):
     created: List[TransactionResponse]
     total: int
     errors: List[str] = []
+
+
+# ============================================
+# SCHEMA PARA BULK (carga masiva desde frontend)
+# ============================================
+class BulkTransactionItem(BaseModel):
+    """
+    Item individual para carga masiva.
+    Similar a TransactionCreate pero con validaciones menos estrictas
+    para permitir procesar todos los items y reportar errores individuales.
+    """
+    account_id: UUID4
+    date: date_type
+    amount: float
+    description: str = Field(..., min_length=1, max_length=500)
+    category_id: Optional[Union[UUID4, str]] = None
+    type: str = Field(..., pattern="^(income|expense|transfer)$")
+    notes: Optional[str] = ""
+    tags: Optional[List[str]] = []
+    source: Optional[str] = Field(default="import", max_length=50)
+    transfer_account_id: Optional[UUID4] = None
+    categoria: Optional[str] = None  # Campo alternativo para nombre de categoría
+
+    @field_validator('category_id', mode='before')
+    @classmethod
+    def normalize_category_id(cls, v):
+        if v == "" or v is None:
+            return None
+        if isinstance(v, str):
+            return v.strip()
+        return v
+
+    @field_validator('categoria', mode='before')
+    @classmethod
+    def normalize_categoria(cls, v):
+        if v == "" or v is None:
+            return None
+        if isinstance(v, str):
+            return v.strip()
+        return v
+
+    @model_validator(mode='after')
+    def validate_categoria_priority(self):
+        """Si se proporciona 'categoria', tiene prioridad sobre 'category_id'"""
+        if self.categoria:
+            self.category_id = self.categoria
+            self.categoria = None
+        return self
+
+
+class BulkTransactionRequest(BaseModel):
+    """
+    POST /api/transactions/bulk
+
+    Carga masiva de transacciones desde el frontend.
+    Permite hasta 500 transacciones por petición.
+
+    Ejemplo:
+    {
+      "transactions": [
+        {
+          "account_id": "uuid-de-cuenta",
+          "date": "2026-04-15",
+          "amount": 150.00,
+          "description": "Compra supermercado",
+          "category_id": "Alimentación",
+          "type": "expense"
+        },
+        {
+          "account_id": "uuid-de-cuenta",
+          "date": "2026-04-16",
+          "amount": 2500.00,
+          "description": "Nómina mensual",
+          "category_id": "Salario",
+          "type": "income"
+        }
+      ]
+    }
+    """
+    transactions: List[BulkTransactionItem] = Field(
+        ..., 
+        min_length=1, 
+        max_length=500,
+        description="Lista de transacciones a crear (máximo 500)"
+    )
+
+
+class BulkTransactionError(BaseModel):
+    """Detalle de error en carga masiva"""
+    index: int = Field(..., description="Índice de la transacción con error (0-based)")
+    error: str = Field(..., description="Mensaje de error")
+
+
+class BulkTransactionResponse(BaseModel):
+    """
+    Respuesta de carga masiva de transacciones.
+
+    Ejemplo de respuesta:
+    {
+      "created": 50,
+      "failed": 2,
+      "errors": [
+        { "index": 12, "error": "Categoría no válida" },
+        { "index": 45, "error": "Fecha inválida" }
+      ]
+    }
+    """
+    created: int = Field(..., description="Número de transacciones creadas exitosamente")
+    failed: int = Field(..., description="Número de transacciones fallidas")
+    errors: List[BulkTransactionError] = Field(
+        default=[], 
+        description="Lista de errores con índice y mensaje"
+    )

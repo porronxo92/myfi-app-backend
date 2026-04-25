@@ -9,7 +9,11 @@ from datetime import date
 import math
 
 from app.database import get_db
-from app.schemas import TransactionCreate, TransactionUpdate, TransactionResponse, PaginatedResponse, TransactionBatchCreate, TransactionBatchResponse
+from app.schemas import (
+    TransactionCreate, TransactionUpdate, TransactionResponse, 
+    PaginatedResponse, TransactionBatchCreate, TransactionBatchResponse,
+    BulkTransactionRequest, BulkTransactionResponse, BulkTransactionError
+)
 from app.services import TransactionService
 from app.utils.security import get_current_user, check_rate_limit
 from app.models import User
@@ -315,6 +319,187 @@ async def create_transactions_batch(
     return TransactionBatchResponse(
         created=created_transactions,
         total=len(created_transactions),
+        errors=errors
+    )
+
+
+@router.post("/bulk", response_model=BulkTransactionResponse, status_code=status.HTTP_201_CREATED)
+async def create_bulk_transactions(
+    payload: BulkTransactionRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Carga masiva de transacciones (hasta 500 por petición).
+    
+    Este endpoint está optimizado para cargas masivas desde el frontend,
+    procesando todas las transacciones en un solo commit para evitar
+    errores 429 Too Many Requests.
+
+    **Request Body:**
+    ```json
+    {
+      "transactions": [
+        {
+          "account_id": "uuid-de-cuenta",
+          "date": "2026-04-15",
+          "amount": 150.00,
+          "description": "Compra supermercado",
+          "category_id": "Alimentación",
+          "type": "expense"
+        },
+        {
+          "account_id": "uuid-de-cuenta",
+          "date": "2026-04-16",
+          "amount": 2500.00,
+          "description": "Nómina mensual",
+          "category_id": "Salario",
+          "type": "income"
+        }
+      ]
+    }
+    ```
+
+    **Response (201 Created):**
+    ```json
+    {
+      "created": 50,
+      "failed": 2,
+      "errors": [
+        { "index": 12, "error": "Categoría no válida" },
+        { "index": 45, "error": "Fecha inválida" }
+      ]
+    }
+    ```
+
+    **Notas:**
+    - Máximo 500 transacciones por petición
+    - Todas las transacciones válidas se crean en un solo commit
+    - Los balances de las cuentas se actualizan automáticamente
+    - No tiene rate limiting para permitir cargas masivas
+    - category_id acepta UUID o nombre de categoría (case-insensitive)
+    """
+    logger.info(f"Carga masiva: {len(payload.transactions)} transacciones para user {current_user.email}")
+
+    created_count = 0
+    errors: list[BulkTransactionError] = []
+    
+    # Preparar transacciones válidas para commit único
+    transactions_to_create = []
+    account_balance_changes: dict[UUID, float] = {}
+
+    for idx, tx_data in enumerate(payload.transactions):
+        try:
+            # Validar fecha no futura
+            if tx_data.date > date.today():
+                raise ValueError("La fecha no puede ser futura")
+            
+            # Validar monto no cero
+            if tx_data.amount == 0:
+                raise ValueError("El monto no puede ser cero")
+            
+            # Validar que la cuenta existe y pertenece al usuario
+            from app.models import Account
+            account = db.query(Account).filter(
+                Account.id == tx_data.account_id,
+                Account.user_id == current_user.id
+            ).first()
+            
+            if not account:
+                raise ValueError("La cuenta no existe o no pertenece al usuario")
+            
+            # Resolver categoría (UUID o nombre)
+            category_id = None
+            if tx_data.category_id:
+                from app.models import Category
+                # Intentar como UUID primero
+                try:
+                    from uuid import UUID as UUIDType
+                    cat_uuid = UUIDType(str(tx_data.category_id))
+                    category = db.query(Category).filter(
+                        Category.id == cat_uuid,
+                        Category.user_id == current_user.id
+                    ).first()
+                    if category:
+                        category_id = category.id
+                    else:
+                        raise ValueError(f"Categoría con ID '{tx_data.category_id}' no encontrada")
+                except (ValueError, AttributeError):
+                    # No es UUID, buscar por nombre
+                    category = db.query(Category).filter(
+                        Category.user_id == current_user.id,
+                        Category.name.ilike(str(tx_data.category_id).strip())
+                    ).first()
+                    if category:
+                        category_id = category.id
+                    else:
+                        raise ValueError(f"Categoría '{tx_data.category_id}' no encontrada")
+            
+            # Crear objeto Transaction
+            from app.models import Transaction
+            import uuid
+            from decimal import Decimal
+            
+            new_transaction = Transaction(
+                id=uuid.uuid4(),
+                account_id=tx_data.account_id,
+                date=tx_data.date,
+                amount=Decimal(str(abs(tx_data.amount))),
+                description=tx_data.description,
+                category_id=category_id,
+                type=tx_data.type,
+                notes=tx_data.notes or "",
+                tags=tx_data.tags or [],
+                source=tx_data.source or "import"
+            )
+            
+            transactions_to_create.append(new_transaction)
+            
+            # Calcular cambio de balance
+            amount_change = abs(tx_data.amount) if tx_data.type == "income" else -abs(tx_data.amount)
+            if tx_data.account_id not in account_balance_changes:
+                account_balance_changes[tx_data.account_id] = 0
+            account_balance_changes[tx_data.account_id] += amount_change
+            
+            created_count += 1
+            
+        except Exception as e:
+            errors.append(BulkTransactionError(
+                index=idx,
+                error=str(e)
+            ))
+            logger.warning(f"Error en transacción índice {idx}: {e}")
+
+    # Hacer commit único de todas las transacciones válidas
+    if transactions_to_create:
+        try:
+            for tx in transactions_to_create:
+                db.add(tx)
+            
+            # Actualizar balances de cuentas
+            from app.models import Account
+            for account_id, balance_change in account_balance_changes.items():
+                account = db.query(Account).filter(Account.id == account_id).first()
+                if account:
+                    current_balance = float(account.balance) if account.balance else 0.0
+                    account.balance = Decimal(str(current_balance + balance_change))
+            
+            db.commit()
+            logger.info(f"Bulk commit exitoso: {created_count} transacciones creadas")
+            
+        except Exception as e:
+            db.rollback()
+            logger.error(f"Error en commit bulk: {e}")
+            # Si falla el commit, todas las transacciones fallan
+            return BulkTransactionResponse(
+                created=0,
+                failed=len(payload.transactions),
+                errors=[BulkTransactionError(index=0, error=f"Error en commit: {str(e)}")]
+            )
+
+    return BulkTransactionResponse(
+        created=created_count,
+        failed=len(errors),
         errors=errors
     )
 
