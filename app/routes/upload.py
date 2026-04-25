@@ -6,13 +6,14 @@ from app.utils.security import get_current_user, check_rate_limit, check_gemini_
 from app.models import User
 from app.services.category_service import CategoryService
 from app.utils.logger import get_logger, upload_logger, log_exception
-from typing import List
+from typing import List, Optional
 import google.generativeai as genai
 import json
 import os
 import shutil
 from pathlib import Path
 from tempfile import NamedTemporaryFile
+import pandas as pd
 
 # Logger para este módulo
 logger = get_logger("app.routes.upload")
@@ -25,6 +26,55 @@ router = APIRouter(
 # Configurar Gemini
 genai.configure(api_key=settings.GEMINI_API_KEY)
 logger.info("Gemini API configurada correctamente")
+
+
+# Tipos MIME soportados por Gemini para archivos
+GEMINI_SUPPORTED_MIMES = {
+    'pdf': 'application/pdf',
+    'csv': 'text/csv',
+    'txt': 'text/plain',
+}
+
+# Extensiones que requieren conversión a CSV
+EXCEL_EXTENSIONS = {'xlsx', 'xls'}
+
+
+def convert_excel_to_csv(excel_path: str, output_path: Optional[str] = None) -> str:
+    """
+    Convierte un archivo Excel (.xlsx/.xls) a CSV para compatibilidad con Gemini.
+    
+    Gemini no soporta archivos Excel directamente, por lo que necesitamos
+    convertirlos a CSV antes de enviarlos para procesamiento.
+    
+    Args:
+        excel_path: Ruta al archivo Excel
+        output_path: Ruta de salida para el CSV (opcional, se genera automáticamente)
+    
+    Returns:
+        Ruta al archivo CSV generado
+    """
+    if output_path is None:
+        output_path = excel_path.rsplit('.', 1)[0] + '.csv'
+    
+    try:
+        # Leer solo la primera hoja del Excel
+        excel_file = pd.ExcelFile(excel_path)
+        if not excel_file.sheet_names:
+            # Archivo vacío, crear CSV vacío
+            pd.DataFrame().to_csv(output_path, index=False)
+            logger.warning(f"Excel vacío, creando CSV vacío: {output_path}")
+            return output_path
+
+        first_sheet = excel_file.sheet_names[0]
+        df = pd.read_excel(excel_file, sheet_name=first_sheet)
+        df.to_csv(output_path, index=False, encoding='utf-8')
+        logger.info(f"Excel convertido a CSV (solo primera hoja): {excel_path} -> {output_path}")
+        logger.info(f"Total filas: {len(df)}, Hoja procesada: {first_sheet}")
+        return output_path
+
+    except Exception as e:
+        logger.error(f"Error convirtiendo Excel a CSV: {e}")
+        raise ValueError(f"No se pudo convertir el archivo Excel: {str(e)}")
 
 
 def build_extraction_prompt(expense_categories: List[str], income_categories: List[str]) -> str:
@@ -269,6 +319,7 @@ async def upload_document(
     upload_logger.info(f"Prompt generado con {len(expense_names)} categorías de gasto y {len(income_names)} categorías de ingreso")
 
     temp_path = None
+    csv_temp_path = None  # Para archivos Excel convertidos
     try:
         # Crear directorio temporal y guardar archivo
         temp_dir = Path("temp_uploads")
@@ -277,9 +328,18 @@ async def upload_document(
             temp_path = temp_file.name
             shutil.copyfileobj(fichero.file, temp_file)
 
+        # Determinar el archivo a subir a Gemini
+        # Si es Excel, convertir a CSV primero (Gemini no soporta xlsx/xls)
+        file_to_upload = temp_path
+        if file_extension in EXCEL_EXTENSIONS:
+            upload_logger.info(f"Archivo Excel detectado ({file_extension}), convirtiendo a CSV...")
+            csv_temp_path = convert_excel_to_csv(temp_path)
+            file_to_upload = csv_temp_path
+            upload_logger.info(f"Conversi\u00f3n completada: {csv_temp_path}")
+
         # 1. Subir a Google Generative AI
-        upload_logger.info("Subiendo archivo a Gemini...")
-        uploaded_file = genai.upload_file(path=temp_path)
+        upload_logger.info(f"Subiendo archivo a Gemini: {file_to_upload}")
+        uploaded_file = genai.upload_file(path=file_to_upload)
 
         # 2. Inicializar modelo
         model = genai.GenerativeModel(model_name=settings.LLM_MODEL)
@@ -350,4 +410,7 @@ async def upload_document(
         if temp_path and os.path.exists(temp_path):
             os.remove(temp_path)
             upload_logger.info(f"Archivo temporal eliminado: {temp_path}")
+        if csv_temp_path and os.path.exists(csv_temp_path):
+            os.remove(csv_temp_path)
+            upload_logger.info(f"Archivo CSV temporal eliminado: {csv_temp_path}")
 
