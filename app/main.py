@@ -3,7 +3,7 @@ from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from app.config import settings
-from app.routes import upload, accounts, categories, transactions, users, analytics, insights, health, investments, budgets
+from app.routes import upload, accounts, categories, transactions, users, analytics, insights, health, investments, budgets, financial_analysis
 from app.utils.security import check_rate_limit
 from app.utils.logger import app_logger, access_logger, error_logger, get_logger
 import time
@@ -155,6 +155,7 @@ app.include_router(insights.router, tags=["insights"])
 app.include_router(health.router, tags=["health"])
 app.include_router(investments.router, tags=["investments"])
 app.include_router(budgets.router, tags=["budgets"])
+app.include_router(financial_analysis.router, tags=["financial-analysis"])
 
 
 # =============================================================
