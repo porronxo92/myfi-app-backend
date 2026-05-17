@@ -7,7 +7,10 @@ from datetime import date as date_type, datetime
 # ============================================
 class TransactionBase(BaseModel):
     date: date_type = Field(..., description="Fecha de la transacción")
-    amount: float = Field(..., description="Importe (positivo=ingreso, negativo=gasto)")
+    amount: float = Field(
+        ..., 
+        description="Importe con signo: negativo para gastos (expense), positivo para ingresos (income). Ejemplo: -50.00 para un gasto de 50€"
+    )
     description: str = Field(..., min_length=1, max_length=500)
     category_id: Optional[Union[UUID4, str]] = None  # Acepta UUID o nombre de categoría
     type: str = Field(..., pattern="^(income|expense|transfer)$")
@@ -358,3 +361,82 @@ class BulkTransactionResponse(BaseModel):
         default=[], 
         description="Lista de errores con índice y mensaje"
     )
+
+
+# ============================================
+# SCHEMA PARA TRANSFERENCIAS (endpoint atómico)
+# ============================================
+class TransferCreate(BaseModel):
+    """
+    POST /api/transactions/transfer
+    
+    Endpoint atómico para crear transferencias entre cuentas.
+    Crea dos transacciones vinculadas en una sola operación:
+    - Gasto (expense) en la cuenta origen
+    - Ingreso (income) en la cuenta destino
+    
+    Las categorías "Transferencia" se asignan automáticamente.
+    
+    Ejemplo de request:
+    {
+      "from_account_id": "uuid-cuenta-origen",
+      "to_account_id": "uuid-cuenta-destino",
+      "amount": 500.00,
+      "description": "Ahorro mensual",
+      "date": "2026-05-17",
+      "notes": "Transferencia a cuenta de ahorros",
+      "tags": ["ahorro", "mensual"]
+    }
+    """
+    from_account_id: UUID4 = Field(..., description="UUID de la cuenta origen (donde sale el dinero)")
+    to_account_id: UUID4 = Field(..., description="UUID de la cuenta destino (donde llega el dinero)")
+    amount: float = Field(..., gt=0, description="Monto a transferir (siempre positivo)")
+    description: str = Field(..., min_length=1, max_length=500, description="Descripción de la transferencia")
+    date: date_type = Field(..., description="Fecha de la transferencia")
+    notes: Optional[str] = Field(default="", description="Notas adicionales")
+    tags: Optional[List[str]] = Field(default=[], description="Etiquetas de la transferencia")
+    
+    @field_validator('date')
+    @classmethod
+    def validate_date_not_future(cls, v):
+        from datetime import date as dt_date
+        if v > dt_date.today():
+            raise ValueError('La fecha no puede ser futura')
+        return v
+    
+    @model_validator(mode='after')
+    def validate_different_accounts(self):
+        """Validar que las cuentas sean diferentes"""
+        if self.from_account_id == self.to_account_id:
+            raise ValueError('No se puede transferir a la misma cuenta')
+        return self
+
+
+class TransferResponse(BaseModel):
+    """
+    Respuesta del endpoint de transferencias.
+    
+    Incluye ambas transacciones creadas:
+    - expense_transaction: Transacción de gasto en cuenta origen
+    - income_transaction: Transacción de ingreso en cuenta destino
+    
+    Ejemplo de response:
+    {
+      "expense_transaction": {
+        "id": "uuid-gasto",
+        "account_id": "uuid-origen",
+        "amount": -500.00,
+        "type": "expense",
+        ...
+      },
+      "income_transaction": {
+        "id": "uuid-ingreso",
+        "account_id": "uuid-destino",
+        "amount": 500.00,
+        "type": "income",
+        ...
+      }
+    }
+    """
+    expense_transaction: TransactionResponse = Field(..., description="Transacción de gasto en cuenta origen")
+    income_transaction: TransactionResponse = Field(..., description="Transacción de ingreso en cuenta destino")

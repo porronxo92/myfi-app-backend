@@ -12,6 +12,7 @@ from app.schemas.investment import *
 __all__ = ["AccountCreate", "AccountUpdate", "AccountResponse", "AccountBatchCreate", "AccountBatchResponse",
            "TransactionCreate", "TransactionUpdate", "TransactionResponse", "TransactionBatchCreate", "TransactionBatchResponse",
            "BulkTransactionItem", "BulkTransactionRequest", "BulkTransactionError", "BulkTransactionResponse",
+           "TransferCreate", "TransferResponse",
            "CategoryCreate", "CategoryUpdate", "CategoryResponse", "CategoryBatchCreate", "CategoryBatchResponse",
            "PreviewResponse", "ImportRequest", "ImportResponse", "TransactionImport",
            "InvestmentCreate", "InvestmentUpdate", "InvestmentResponse",

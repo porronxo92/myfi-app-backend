@@ -66,6 +66,14 @@ class AccountResponse(AccountBase):
     
     Incluye campos adicionales que vienen de la BBDD
     
+    **Diferencia entre balance y calculated_balance:**
+    - `balance`: Saldo persistido en BD que se actualiza automáticamente en cada operación
+      de transacciones (CREATE/UPDATE/DELETE). Este es el campo oficial y actual.
+    - `calculated_balance`: Campo legacy opcional, actualmente no se calcula. Puede ser None.
+      Se mantiene por compatibilidad pero NO se recomienda su uso.
+    
+    **Recomendación:** Usa siempre `balance` como el saldo oficial de la cuenta.
+    
     Ejemplo de response:
     {
       "id": "uuid-123",
@@ -74,7 +82,7 @@ class AccountResponse(AccountBase):
       "balance": 1000.00,
       "created_at": "2025-01-15T10:30:00",
       "transaction_count": 45,
-      "calculated_balance": 1023.50
+      "calculated_balance": null
     }
     """
     id: UUID4  # Campo que viene de BBDD
@@ -82,7 +90,10 @@ class AccountResponse(AccountBase):
     
     # Campos calculados (opcionales)
     transaction_count: Optional[int] = 0
-    calculated_balance: Optional[float] = None
+    calculated_balance: Optional[float] = Field(
+        default=None,
+        description="LEGACY: Campo opcional para compatibilidad. Usa 'balance' en su lugar."
+    )
     
     model_config = ConfigDict(from_attributes=True)
     

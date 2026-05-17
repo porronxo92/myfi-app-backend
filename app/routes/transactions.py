@@ -12,7 +12,8 @@ from app.database import get_db
 from app.schemas import (
     TransactionCreate, TransactionUpdate, TransactionResponse, 
     PaginatedResponse, TransactionBatchCreate, TransactionBatchResponse,
-    BulkTransactionRequest, BulkTransactionResponse, BulkTransactionError
+    BulkTransactionRequest, BulkTransactionResponse, BulkTransactionError,
+    TransferCreate, TransferResponse
 )
 from app.services import TransactionService
 from app.utils.security import get_current_user, check_rate_limit
@@ -173,6 +174,11 @@ async def create_transaction(
     """
     Crear nueva transacción para el usuario autenticado
     
+    **CONVENCIÓN DE SIGNO DEL CAMPO `amount`:**
+    - **Gastos (expense)**: amount NEGATIVO (ej: -50.00 para un gasto de 50€)
+    - **Ingresos (income)**: amount POSITIVO (ej: 2500.00 para un ingreso de 2500€)
+    - El balance de la cuenta se actualiza automáticamente sumando el amount (por eso los gastos son negativos)
+    
     **El campo de categoría acepta DOS FORMATOS:**
     
     **Opción 1: Envío por UUID (comportamiento original)**
@@ -265,6 +271,103 @@ async def create_transaction(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(e)
+        )
+
+
+@router.post("/transfer", response_model=TransferResponse, status_code=status.HTTP_201_CREATED)
+async def create_transfer(
+    transfer_data: TransferCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    _: bool = Depends(check_rate_limit)
+):
+    """
+    Crear una transferencia atómica entre dos cuentas del usuario.
+    
+    **Descripción:**
+    Endpoint especializado para crear transferencias de dinero entre cuentas.
+    Crea automáticamente dos transacciones vinculadas en una sola operación atómica:
+    - Transacción de gasto (expense) en la cuenta origen con amount negativo
+    - Transacción de ingreso (income) en la cuenta destino con amount positivo
+    
+    Las categorías "Transferencia" se asignan automáticamente (se crean si no existen).
+    
+    **Ventajas sobre crear dos transacciones manualmente:**
+    - ✅ Operación atómica: ambas transacciones se crean o ninguna (rollback automático)
+    - ✅ No requiere IDs de categorías hardcodeados en el frontend
+    - ✅ Garantiza consistencia en los balances de ambas cuentas
+    - ✅ Menos propensas a errores de red o de usuario
+    
+    **Request Body:**
+    ```json
+    {
+      "from_account_id": "uuid-cuenta-origen",
+      "to_account_id": "uuid-cuenta-destino",
+      "amount": 500.00,
+      "description": "Ahorro mensual",
+      "date": "2026-05-17",
+      "notes": "Transferencia a cuenta de ahorros",
+      "tags": ["ahorro", "mensual"]
+    }
+    ```
+    
+    **IMPORTANTE:**
+    - `amount`: Siempre positivo (el backend aplica el signo correcto)
+    - `from_account_id` y `to_account_id`: Deben ser diferentes
+    - Ambas cuentas deben pertenecer al usuario autenticado
+    - `date`: No puede ser futura
+    
+    **Response:** 201 Created
+    ```json
+    {
+      "expense_transaction": {
+        "id": "uuid-gasto",
+        "account_id": "uuid-origen",
+        "amount": -500.00,
+        "type": "expense",
+        "category_name": "Transferencia",
+        ...
+      },
+      "income_transaction": {
+        "id": "uuid-ingreso",
+        "account_id": "uuid-destino",
+        "amount": 500.00,
+        "type": "income",
+        "category_name": "Transferencia",
+        ...
+      }
+    }
+    ```
+    
+    **Códigos de Error:**
+    - **400**: Validación fallida (cuentas iguales, amount <= 0, fecha futura, etc.)
+    - **400**: Cuenta origen o destino no existe o no pertenece al usuario
+    - **500**: Error interno durante la transacción (se hace rollback automático)
+    """
+    logger.info(f"Creando transferencia para user {current_user.email}: {transfer_data.amount} de {transfer_data.from_account_id} a {transfer_data.to_account_id}")
+
+    try:
+        expense_transaction, income_transaction = TransactionService.create_transfer(
+            db, transfer_data, current_user.id
+        )
+        
+        logger.info(f"Transferencia creada exitosamente: expense={expense_transaction.id}, income={income_transaction.id}")
+        
+        return TransferResponse(
+            expense_transaction=TransactionResponse.model_validate(expense_transaction),
+            income_transaction=TransactionResponse.model_validate(income_transaction)
+        )
+    except ValueError as e:
+        logger.error(f"Error de validación en transferencia: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+    except Exception as e:
+        logger.error(f"Error al crear transferencia: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error al crear transferencia: {str(e)}"
         )
 
 
@@ -524,9 +627,13 @@ async def update_transaction(
     }
     ```
     
+    **IMPORTANTE - Convención de signo:**
+    - Al actualizar `amount`, mantén la convención: negativo para gastos, positivo para ingresos
+    - Ejemplo: cambiar gasto de 50€ a 55€ → envía `"amount": -55.00`
+    
     **Response:** 200 OK con los datos actualizados
     
-    **Nota:** Si cambias el amount, el balance de la cuenta se ajusta automáticamente
+    **Nota:** Si cambias el amount, el balance de la cuenta se ajusta automáticamente (diferencia entre nuevo y antiguo monto)
     """
     logger.info(f"Actualizando transacción {transaction_id} para user {current_user.email}")
     

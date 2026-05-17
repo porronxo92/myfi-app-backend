@@ -301,8 +301,8 @@ async def upload_document(
     await validate_file_size(fichero, settings.MAX_FILE_SIZE_MB)
 
     # Obtener categorías del usuario para el prompt personalizado
-    expense_categories = CategoryService.get_all_available_categories(db, current_user.id, category_type="expense")
-    income_categories = CategoryService.get_all_available_categories(db, current_user.id, category_type="income")
+    expense_categories = CategoryService.get_all_available_categories(db, current_user.id, type="expense")
+    income_categories = CategoryService.get_all_available_categories(db, current_user.id, type="income")
 
     # Extraer nombres de categorías
     expense_names = [cat.name for cat in expense_categories] if expense_categories else ["Sin Categorizar"]

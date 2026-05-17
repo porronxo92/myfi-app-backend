@@ -306,6 +306,136 @@ class TransactionService:
         return True
     
     @staticmethod
+    def create_transfer(db: Session, transfer_data, user_id: UUID):
+        """
+        Crear una transferencia atómica entre dos cuentas.
+        
+        Crea dos transacciones vinculadas en una sola operación de base de datos:
+        1. Gasto (expense) en la cuenta origen con amount negativo
+        2. Ingreso (income) en la cuenta destino con amount positivo
+        
+        Las categorías "Transferencia" se buscan o crean automáticamente.
+        La operación es atómica: si falla cualquier paso, se hace rollback completo.
+        
+        Args:
+            db: Sesión de base de datos
+            transfer_data: TransferCreate con from_account_id, to_account_id, amount, etc.
+            user_id: UUID del usuario autenticado
+        
+        Returns:
+            Tupla (expense_transaction, income_transaction)
+        
+        Raises:
+            ValueError: Si alguna cuenta no existe o no pertenece al usuario
+        """
+        from app.services.category_service import CategoryService
+        
+        logger.info(f"Creando transferencia atómica para user_id: {user_id}")
+        logger.info(f"De cuenta {transfer_data.from_account_id} a cuenta {transfer_data.to_account_id}, monto: {transfer_data.amount}")
+        
+        # Validar que ambas cuentas existen y pertenecen al usuario
+        from_account = db.query(Account).filter(
+            Account.id == transfer_data.from_account_id,
+            Account.user_id == user_id
+        ).first()
+        if not from_account:
+            raise ValueError(f"La cuenta origen {transfer_data.from_account_id} no existe o no pertenece al usuario")
+        
+        to_account = db.query(Account).filter(
+            Account.id == transfer_data.to_account_id,
+            Account.user_id == user_id
+        ).first()
+        if not to_account:
+            raise ValueError(f"La cuenta destino {transfer_data.to_account_id} no existe o no pertenece al usuario")
+        
+        # Buscar o crear categorías "Transferencia"
+        expense_category = db.query(Category).filter(
+            Category.user_id == user_id,
+            Category.name == "Transferencia",
+            Category.type == "expense"
+        ).first()
+        
+        if not expense_category:
+            logger.info("Creando categoría 'Transferencia' de tipo expense")
+            expense_category = Category(
+                user_id=user_id,
+                name="Transferencia",
+                type="expense",
+                color="#6B7280"  # Gris neutral
+            )
+            db.add(expense_category)
+            db.flush()  # Obtener el ID sin hacer commit
+        
+        income_category = db.query(Category).filter(
+            Category.user_id == user_id,
+            Category.name == "Transferencia",
+            Category.type == "income"
+        ).first()
+        
+        if not income_category:
+            logger.info("Creando categoría 'Transferencia' de tipo income")
+            income_category = Category(
+                user_id=user_id,
+                name="Transferencia",
+                type="income",
+                color="#6B7280"  # Gris neutral
+            )
+            db.add(income_category)
+            db.flush()  # Obtener el ID sin hacer commit
+        
+        try:
+            # Crear transacción de gasto (salida de dinero)
+            expense_transaction = Transaction(
+                account_id=transfer_data.from_account_id,
+                date=transfer_data.date,
+                amount=-abs(transfer_data.amount),  # Siempre negativo para gasto
+                description=transfer_data.description,
+                category_id=expense_category.id,
+                type="expense",
+                notes=transfer_data.notes or "",
+                tags=transfer_data.tags or [],
+                source="manual",
+                transfer_account_id=transfer_data.to_account_id  # Vincular con cuenta destino
+            )
+            db.add(expense_transaction)
+            
+            # Actualizar balance de cuenta origen (restar)
+            from_account.balance -= Decimal(str(abs(transfer_data.amount)))
+            logger.info(f"Balance cuenta origen actualizado: {from_account.name} = {from_account.balance}")
+            
+            # Crear transacción de ingreso (entrada de dinero)
+            income_transaction = Transaction(
+                account_id=transfer_data.to_account_id,
+                date=transfer_data.date,
+                amount=abs(transfer_data.amount),  # Siempre positivo para ingreso
+                description=transfer_data.description,
+                category_id=income_category.id,
+                type="income",
+                notes=transfer_data.notes or "",
+                tags=transfer_data.tags or [],
+                source="manual",
+                transfer_account_id=transfer_data.from_account_id  # Vincular con cuenta origen
+            )
+            db.add(income_transaction)
+            
+            # Actualizar balance de cuenta destino (sumar)
+            to_account.balance += Decimal(str(abs(transfer_data.amount)))
+            logger.info(f"Balance cuenta destino actualizado: {to_account.name} = {to_account.balance}")
+            
+            # Commit atómico: si falla, se revierten todas las operaciones
+            db.commit()
+            db.refresh(expense_transaction)
+            db.refresh(income_transaction)
+            
+            logger.info(f"Transferencia creada exitosamente: {expense_transaction.id} y {income_transaction.id}")
+            return (expense_transaction, income_transaction)
+            
+        except Exception as e:
+            logger.error(f"Error al crear transferencia: {str(e)}")
+            db.rollback()
+            raise ValueError(f"Error al crear transferencia: {str(e)}")
+    
+    @staticmethod
     def get_total_count(
         db: Session,
         user_id: UUID,

@@ -110,7 +110,7 @@ class Account(Base):
         EncryptedNumeric,
         nullable=True,
         default=Decimal("0.00"),
-        comment="Saldo actual - ENCRIPTADO AES-256-GCM"
+        comment="Saldo actual persistido - Se actualiza automáticamente en cada operación CRUD de transacciones - ENCRIPTADO AES-256-GCM"
     )
     
     account_number = Column(
@@ -189,8 +189,11 @@ class Account(Base):
         """
         Añade un monto al balance.
         
+        Este método es llamado automáticamente por TransactionService al crear
+        o actualizar transacciones. El balance se persiste en la base de datos.
+        
         Args:
-            amount: Decimal a añadir (puede ser negativo)
+            amount: Decimal a añadir (puede ser negativo para gastos)
         """
         current = self.get_balance_as_decimal()
         self.balance = current + Decimal(str(amount))
@@ -198,6 +201,9 @@ class Account(Base):
     def subtract_from_balance(self, amount: Decimal):
         """
         Resta un monto del balance.
+        
+        Este método es llamado automáticamente por TransactionService al eliminar
+        transacciones. El balance se persiste en la base de datos.
         
         Args:
             amount: Decimal a restar

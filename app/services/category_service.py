@@ -19,7 +19,7 @@ class CategoryService:
     """Lógica de negocio para categorías"""
 
     @staticmethod
-    def get_all(db: Session, user_id: UUID, skip: int = 0, limit: int = 100, category_type: Optional[str] = None) -> List[Category]:
+    def get_all(db: Session, user_id: UUID, skip: int = 0, limit: int = 100, type: Optional[str] = None) -> List[Category]:
         """
         Obtener todas las categorías con paginación (solo las usadas por el usuario en transacciones)
 
@@ -28,12 +28,12 @@ class CategoryService:
             user_id: UUID del usuario
             skip: Registros a saltar (offset)
             limit: Número máximo de registros
-            category_type: Filtrar por tipo (income/expense)
+            type: Filtrar por tipo (income/expense)
 
         Returns:
             Lista de categorías con estadísticas calculadas
         """
-        logger.info(f"Obteniendo categorías usadas para user_id: {user_id}, skip={skip}, limit={limit}, type={category_type}")
+        logger.info(f"Obteniendo categorías usadas para user_id: {user_id}, skip={skip}, limit={limit}, type={type}")
 
         # Obtener IDs de categorías usadas por el usuario (a través de sus transacciones)
         category_ids_query = db.query(Category.id).join(
@@ -44,8 +44,8 @@ class CategoryService:
             Account.user_id == user_id
         )
 
-        if category_type:
-            category_ids_query = category_ids_query.filter(Category.type == category_type)
+        if type:
+            category_ids_query = category_ids_query.filter(Category.type == type)
 
         category_ids_query = category_ids_query.distinct()
 
@@ -267,14 +267,14 @@ class CategoryService:
         return True
 
     @staticmethod
-    def get_total_count(db: Session, user_id: UUID, category_type: Optional[str] = None) -> int:
+    def get_total_count(db: Session, user_id: UUID, type: Optional[str] = None) -> int:
         """
         Obtener total de categorías usadas por el usuario en transacciones (para paginación)
 
         Args:
             db: Sesión de base de datos
             user_id: UUID del usuario
-            category_type: Filtrar por tipo (income/expense)
+            type: Filtrar por tipo (income/expense)
 
         Returns:
             Número total de categorías usadas por el usuario
@@ -287,13 +287,13 @@ class CategoryService:
             Account.user_id == user_id
         )
 
-        if category_type:
-            query = query.filter(Category.type == category_type)
+        if type:
+            query = query.filter(Category.type == type)
 
         return query.scalar()
 
     @staticmethod
-    def get_all_available_categories(db: Session, user_id: UUID, category_type: Optional[str] = None) -> List[Category]:
+    def get_all_available_categories(db: Session, user_id: UUID, type: Optional[str] = None) -> List[Category]:
         """
         Obtener todas las categorías disponibles para un usuario:
         - Categorías globales (user_id = NULL)
@@ -302,18 +302,18 @@ class CategoryService:
         Args:
             db: Sesión de base de datos
             user_id: UUID del usuario
-            category_type: Filtrar por tipo (income/expense/None=todas)
+            type: Filtrar por tipo (income/expense/None=todas)
 
         Returns:
             Lista de todas las categorías disponibles para el usuario
         """
-        logger.info(f"Obteniendo todas las categorías disponibles para user_id: {user_id}, type={category_type}")
+        logger.info(f"Obteniendo todas las categorías disponibles para user_id: {user_id}, type={type}")
 
         # Categorías del usuario
         query = db.query(Category).filter(Category.user_id == user_id)
 
-        if category_type:
-            query = query.filter(Category.type == category_type)
+        if type:
+            query = query.filter(Category.type == type)
 
         categories = query.order_by(Category.type, Category.name).all()
 

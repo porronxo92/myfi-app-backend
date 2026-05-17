@@ -61,8 +61,8 @@ async def list_categories(
     
     skip = (page - 1) * page_size
     
-    categories = CategoryService.get_all(db, user_id=current_user.id, skip=skip, limit=page_size, category_type=type)
-    total = CategoryService.get_total_count(db, user_id=current_user.id, category_type=type)
+    categories = CategoryService.get_all(db, user_id=current_user.id, skip=skip, limit=page_size, type=type)
+    total = CategoryService.get_total_count(db, user_id=current_user.id, type=type)
     
     return PaginatedResponse(
         items=[CategoryResponse.model_validate(cat) for cat in categories],
@@ -117,7 +117,7 @@ async def get_all_available_categories(
     """
     logger.info(f"Obteniendo todas las categorías disponibles para user {current_user.email}, type={type}")
 
-    categories = CategoryService.get_all_available_categories(db, user_id=current_user.id, category_type=type)
+    categories = CategoryService.get_all_available_categories(db, user_id=current_user.id, type=type)
     
     logger.info(f"Devolviendo {len(categories)} categorías disponibles")
     
@@ -367,8 +367,8 @@ async def get_categories_summary(
     logger.info(f"Obteniendo resumen de categorías para user {current_user.email}")
     
     total = CategoryService.get_total_count(db, user_id=current_user.id)
-    income = CategoryService.get_total_count(db, user_id=current_user.id, category_type="income")
-    expense = CategoryService.get_total_count(db, user_id=current_user.id, category_type="expense")
+    income = CategoryService.get_total_count(db, user_id=current_user.id, type="income")
+    expense = CategoryService.get_total_count(db, user_id=current_user.id, type="expense")
     
     return {
         "total_categories": total,
