@@ -167,6 +167,10 @@ async def get_category(
             detail=f"Categoría {category_id} no encontrada"
         )
     
+    # Asegurar que transaction_count está presente (total_amount ya se calcula en get_by_id)
+    if not hasattr(category, 'transaction_count'):
+        category.transaction_count = 0
+    
     return CategoryResponse.model_validate(category)
 
 
@@ -198,6 +202,11 @@ async def create_category(
     try:
         category = CategoryService.create(db, category_data, user_id=current_user.id)
         logger.info(f"Categoría creada exitosamente: {category.id}")
+        
+        # Asignar valores por defecto para categoría recién creada (sin transacciones)
+        category.transaction_count = 0
+        category.total_amount = 0.0
+        
         return CategoryResponse.model_validate(category)
     except ValueError as e:
         logger.error(f"Error de validación: {e}")
@@ -252,6 +261,11 @@ async def create_categories_batch(
     for category_data in batch_data.categories:
         try:
             category = CategoryService.create(db, category_data, user_id=current_user.id)
+            
+            # Asignar valores por defecto para categoría recién creada
+            category.transaction_count = 0
+            category.total_amount = 0.0
+            
             created_categories.append(CategoryResponse.model_validate(category))
             logger.info(f"Categoría batch creada: {category.name}")
         except Exception as e:
@@ -301,6 +315,12 @@ async def update_category(
             )
         
         logger.info(f"Categoría actualizada exitosamente: {category.id}")
+        
+        # Asignar valores por defecto para la respuesta
+        # (las estadísticas reales se obtienen en el endpoint GET paginado)
+        category.transaction_count = 0
+        category.total_amount = 0.0
+        
         return CategoryResponse.model_validate(category)
     except HTTPException:
         raise

@@ -113,6 +113,7 @@ class CategoryService:
         if category:
             logger.info(f"Categoría encontrada: {category.name}")
             category.total_amount = CategoryService._calculate_total_amount(db, category.id, user_id)
+            category.transaction_count = 0  # Se puede calcular si se necesita
         else:
             logger.warning(f"Categoría no encontrada o sin acceso: {category_id}")
 
